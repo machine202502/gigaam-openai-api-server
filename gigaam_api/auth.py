@@ -1,7 +1,7 @@
-"""Bearer authentication: a single shared key from the settings.
+"""Bearer-аутентификация: один общий ключ из настроек.
 
-Empty API_KEY → auth disabled (LAN-dev). Otherwise a constant-time comparison
-(`secrets.compare_digest`). Mismatch/absence → AuthError (→ 401).
+Пустой API_KEY → auth выключен (LAN-dev). Иначе — сравнение за постоянное время
+(`secrets.compare_digest`). Несовпадение/отсутствие → AuthError (→ 401).
 """
 
 import logging

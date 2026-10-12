@@ -1,4 +1,5 @@
-"""ASR layer: the engine contract (`engine`), the PyTorch implementation (`gigaam_engine`).
+"""ASR-слой: контракт движка (`engine`), реализация на PyTorch (`gigaam_engine`),
+управление жизненным циклом модели (`model_manager`).
 
-VAD/chunking (`vad`) and the formatters (`formats`) will be added in later stages.
+VAD/чанкинг (`vad`) и форматтеры (`formats`) — рядом.
 """

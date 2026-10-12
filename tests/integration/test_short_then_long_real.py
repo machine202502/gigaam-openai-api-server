@@ -1,13 +1,13 @@
-"""Regression: on a SINGLE engine instance a short request must not break longform.
+"""Регрессия: на ОДНОМ экземпляре движка короткий запрос не должен ломать longform.
 
-Reproduces a live-service bug: `gigaam.transcribe` (the short path) is wrapped in
-`@torch.inference_mode()` and caches the encoder's rotary `cos`/`sin` as inference tensors;
-our longform calls `forward`/`_decode` directly and, without its own `inference_mode` wrapper,
-failed on this cache with `RuntimeError: Inference tensors cannot be saved for backward`.
+Воспроизводит баг живого сервиса: `gigaam.transcribe` (короткий путь) обёрнут в
+`@torch.inference_mode()` и кэширует rotary `cos`/`sin` энкодера как inference-тензоры;
+наш longform вызывает `forward`/`_decode` напрямую и без собственной обёртки `inference_mode`
+падал на этом кэше с `RuntimeError: Inference tensors cannot be saved for backward`.
 
-Other integration tests use a SEPARATE instance per file → they did not catch the bug. Here
-we deliberately use one engine and the short→long order (as in the live service with a
-single model).
+Другие интеграционные тесты используют ОТДЕЛЬНЫЙ экземпляр на файл → они не поймали баг. Здесь
+мы намеренно используем один движок и порядок короткий→длинный (как в живом сервисе с
+единственной моделью).
 """
 
 from pathlib import Path
@@ -32,16 +32,16 @@ def engine(tmp_path_factory: pytest.TempPathFactory) -> GigaAMEngine:
     settings = Settings(MODEL="v3_ctc", DEVICE="cpu", MODELS_DIR=cache)
     try:
         return GigaAMEngine(settings)
-    except Exception as exc:  # no network / CDN unavailable / weights failed to download
+    except Exception as exc:  # нет сети / CDN недоступен / веса не скачались
         pytest.skip(f"model unavailable (no network/weights): {exc}")
 
 
 def test_short_then_long_same_engine(engine: GigaAMEngine) -> None:
-    # The short path (gigaam.transcribe under inference_mode) "poisons" the rotary cos/sin cache.
+    # Короткий путь (gigaam.transcribe под inference_mode) «отравляет» кэш rotary cos/sin.
     short = engine.transcribe(str(_SHORT), word_timestamps=False)
     assert short.text.strip(), "expected a non-empty short transcript"
 
-    # Longform on the SAME instance must not fail on the cache's inference tensors.
+    # Longform на ТОМ ЖЕ экземпляре не должен падать на inference-тензорах кэша.
     long = engine.transcribe(str(_LONG), word_timestamps=False)
     assert isinstance(long, ASRResult)
     assert long.text.strip(), "expected a non-empty longform transcript"

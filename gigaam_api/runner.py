@@ -1,8 +1,8 @@
-"""Serialization of blocking inference: one worker + queue limit (backpressure).
+"""Сериализация блокирующего инференса: один воркер + лимит очереди (backpressure).
 
-`Runner` guarantees no more than one inference at a time (the event loop is not blocked)
-and rejects requests beyond `MAX_QUEUE` via `QueueFullError` (→ 503), instead of silently
-waiting for hours. Knows nothing about the model or HTTP.
+`Runner` гарантирует, что одновременно выполняется не более одного инференса (цикл событий
+не блокируется) и отклоняет запросы сверх `MAX_QUEUE` через `QueueFullError` (→ 503),
+вместо того чтобы молча ждать часами. Ничего не знает о модели и HTTP.
 """
 
 import asyncio
@@ -20,26 +20,38 @@ T = TypeVar("T")
 
 
 class QueueFullError(Exception):
-    """The inference queue is full (admitted ≥ MAX_QUEUE) — backpressure (→ 503)."""
+    """Очередь инференса переполнена (принято ≥ MAX_QUEUE) — backpressure (→ 503)."""
 
 
 class Runner:
-    """A single `ThreadPoolExecutor(max_workers=1)` serializes inference; the admitted counter
-    (in the queue + in progress) caps the load."""
+    """Один `ThreadPoolExecutor(max_workers=1)` сериализует инференс; счётчик принятых
+    (в очереди + в работе) ограничивает нагрузку."""
 
     def __init__(self, max_queue: int) -> None:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="asr")
         self._max_queue = max_queue
         self._inflight = 0
-        # the admitted counter is mutated by both the event loop (run/try_acquire) and the
-        # worker thread (release from the stream's done-callback) → protect it with a lock.
+        # счётчик принятых меняют и цикл событий (run/try_acquire), и поток воркера
+        # (release из done-callback потока) → защищаем блокировкой.
         self._lock = threading.Lock()
 
-    def try_acquire(self) -> None:
-        """Acquire a slot (backpressure). On overflow (admitted ≥ MAX_QUEUE) → QueueFullError.
+    @property
+    def inflight(self) -> int:
+        """Сколько задач сейчас принято (в очереди + в работе)."""
+        with self._lock:
+            return self._inflight
 
-        Synchronous — called in the handler BEFORE `StreamingResponse`, so that the 503 is sent
-        before the headers (otherwise the stream would already be `200`)."""
+    @property
+    def max_queue(self) -> int:
+        """Настроенный лимит очереди (`MAX_QUEUE`)."""
+        return self._max_queue
+
+    def try_acquire(self) -> None:
+        """Занять слот (backpressure). При переполнении (принято ≥ MAX_QUEUE) → QueueFullError.
+
+        Синхронный — вызывается в обработчике ДО `StreamingResponse`, чтобы 503 ушёл
+        до заголовков (иначе поток уже был бы `200`)."""
+
         with self._lock:
             if self._inflight >= self._max_queue:
                 logger.warning(
@@ -50,20 +62,22 @@ class Runner:
             logger.debug("inference enqueued: inflight=%d", self._inflight)
 
     def release(self) -> None:
-        """Release a slot (the counterpart of `try_acquire`)."""
+        """Освободить слот (пара к `try_acquire`)."""
         with self._lock:
             self._inflight -= 1
             logger.debug("inference finished: inflight=%d", self._inflight)
 
     def submit(self, fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> Future[T]:
-        """Submit a blocking `fn` to the same single worker (serialization is preserved).
+        """Отправить блокирующую `fn` в тот же единственный воркер (сериализация сохраняется).
 
-        Does NOT track admitted itself — the caller (the stream) does `try_acquire`/`release`,
-        since the slot is held for the entire stream, not just until `submit` returns."""
+        НЕ отслеживает принятые сам — это делает вызывающий (поток) через
+        `try_acquire`/`release`, так как слот держится всё время потока, а не только до
+        возврата из `submit`."""
+
         return self._executor.submit(functools.partial(fn, *args, **kwargs))
 
     async def run(self, fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-        """Execute a blocking `fn` in the single worker. On overflow → QueueFullError."""
+        """Выполнить блокирующую `fn` в единственном воркере. При переполнении → QueueFullError."""
         self.try_acquire()
         try:
             loop = asyncio.get_running_loop()
@@ -73,6 +87,6 @@ class Runner:
             self.release()
 
     def shutdown(self) -> None:
-        """Stop the pool (call in the lifespan on shutdown)."""
-        # cancel_futures=True cancels queued tasks; an already-running thread runs to completion.
+        """Остановить пул (вызывать в lifespan на завершении)."""
+        # cancel_futures=True отменяет задачи в очереди; уже запущенный поток доживёт до конца.
         self._executor.shutdown(wait=False, cancel_futures=True)

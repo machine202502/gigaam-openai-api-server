@@ -1,7 +1,7 @@
-"""Unit tests for audio.py: probe_duration and AudioDecodeError.
+"""Юнит-тесты для audio.py: probe_duration и AudioDecodeError.
 
-We generate the WAV with the stdlib `wave` module (no ffmpeg/network) — deterministically.
-ffprobe reads such a RIFF-WAV without issues.
+WAV мы генерируем стандартным модулем `wave` (без ffmpeg/сети) — детерминированно.
+ffprobe читает такой RIFF-WAV без проблем.
 """
 
 import wave
@@ -24,7 +24,7 @@ def _write_silence_wav(
     n_frames = int(seconds * sample_rate)
     with wave.open(str(path), "wb") as wf:
         wf.setnchannels(channels)
-        wf.setsampwidth(2)  # int16
+        wf.setsampwidth(2)  # int16 (целое 16-бит)
         wf.setframerate(sample_rate)
         wf.writeframes(b"\x00\x00" * channels * n_frames)
 
@@ -48,15 +48,15 @@ def test_probe_duration_raises_on_missing_audio_file(tmp_path: Path) -> None:
 
 
 def test_decode_returns_int16_mono_16k_tensor(tmp_path: Path) -> None:
-    # 8kHz stereo silence → downmix(2→1) + resample(8k→16k): int16, 1-D, ~2x samples.
+    # Тишина 8kHz стерео → downmix(2→1) + ресемплинг(8k→16k): int16, 1-D, ~в 2 раза больше сэмплов.
     src = tmp_path / "stereo8k.wav"
     _write_silence_wav(src, seconds=0.5, sample_rate=8000, channels=2)
     wav = decode_to_int16_16k_mono(str(src))
     assert isinstance(wav, torch.Tensor)
     assert wav.dtype == torch.int16
     assert wav.ndim == 1
-    assert abs(wav.numel() - int(0.5 * 16000)) < 200  # 0.5s @ 16kHz, resampler tolerance
-    assert int(wav.abs().max()) == 0  # silence → zeros
+    assert abs(wav.numel() - int(0.5 * 16000)) < 200  # 0.5с при 16kHz, допуск ресемплера
+    assert int(wav.abs().max()) == 0  # тишина → нули
 
 
 def test_decode_raises_on_corrupt_input(tmp_path: Path) -> None:

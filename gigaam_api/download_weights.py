@@ -1,16 +1,16 @@
-"""Weight warmup: download/verify the model weights into `MODELS_DIR` and exit.
+"""Прогрев весов: скачать/проверить веса модели в `MODELS_DIR` и выйти.
 
-Runs once (CLI or a one-shot container), does not start an HTTP server. Useful for
-pre-warming on a slow/offline host — so that the production start of the service is
-instant (cache hit in the mounted volume) instead of hanging on the download in the lifespan.
+Запускается однократно (CLI или разовый контейнер), не поднимает HTTP-сервер. Полезно для
+предварительного прогрева на медленном/офлайн хосте — чтобы боевой старт сервиса был
+мгновенным (cache-hit в смонтированном volume) вместо зависания на скачивании в lifespan.
 
-Run:
+Запуск:
     python -m gigaam_api.download_weights
-or (see docker-compose.yml, the `tools` profile):
+или (см. docker-compose.yml, профиль `tools`):
     docker compose --profile tools run --rm download-weights
 
-Weights are fetched by `gigaam.load_model(download_root=MODELS_DIR)`; Silero VAD is bundled
-in the package (no network needed). Creating `GigaAMEngine` reuses the service's standard load path.
+Веса получаются через `gigaam.load_model(download_root=MODELS_DIR)`; Silero VAD встроен
+в пакет (сеть не нужна). Создание `GigaAMEngine` использует стандартный путь загрузки сервиса.
 """
 
 import logging
@@ -32,7 +32,7 @@ def main() -> None:
         settings.DEVICE,
         settings.MODELS_DIR,
     )
-    # Lazy import: pull in torch/gigaam only during an actual warmup (project convention).
+    # Ленивый импорт: тянем torch/gigaam только при реальном прогреве (конвенция проекта).
     from gigaam_api.asr.gigaam_engine import GigaAMEngine
 
     engine = GigaAMEngine(settings)

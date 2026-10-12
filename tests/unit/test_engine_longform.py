@@ -1,10 +1,10 @@
-"""Unit tests for GigaAMEngine longform logic without a real model.
+"""Юнит-тесты логики longform GigaAMEngine без реальной модели.
 
-The engine is built via object.__new__ and fake injection: a fake gigaam model
-(forward/_decode/_dtype), a mock for decode_to_int16_16k_mono and speech_intervals.
-merge_intervals_to_chunks runs for real (it is pure and tested separately). We
-verify: ASRResult assembly, text joining, word-timestamp shift/rounding,
-batching, the "no speech" handling, and duration-based routing.
+Движок создаётся через object.__new__ и подстановку фейков: поддельная модель gigaam
+(forward/_decode/_dtype), мок для decode_to_int16_16k_mono и speech_intervals.
+merge_intervals_to_chunks выполняется по-настоящему (он чистый и тестируется отдельно). Мы
+проверяем: сборку ASRResult, объединение текста, сдвиг/округление таймстемпов слов,
+батчинг, обработку «нет речи» и маршрутизацию по длительности.
 """
 
 from collections.abc import Callable
@@ -26,8 +26,8 @@ from gigaam_api.config import Settings
 
 
 class _FakeASRModel:
-    """Fake gigaam model: forward returns a dummy encoded tensor, _decode returns
-    pre-defined (text, words) by the number of batch elements."""
+    """Поддельная модель gigaam: forward возвращает фиктивный закодированный тензор, _decode
+    возвращает заранее заданные (text, words) по числу элементов батча."""
 
     def __init__(self, decode_results: list[tuple[str, list[object] | None]]) -> None:
         self._decode_results = list(decode_results)
@@ -68,7 +68,7 @@ def _word(text: str, start: float, end: float) -> object:
 
 
 def _recorder(calls: list[str], label: str, ret: ASRResult) -> Callable[..., ASRResult]:
-    """Method stub that records the fact of the call and returns a fixed ASRResult."""
+    """Заглушка метода, которая фиксирует факт вызова и возвращает фиксированный ASRResult."""
 
     def _stub(*args: object, **kwargs: object) -> ASRResult:
         calls.append(label)
@@ -86,11 +86,11 @@ def test_collate_pads_to_max_and_reports_lengths() -> None:
     batch, lengths = _collate([a, b])
     assert batch.shape == (2, 5)
     assert lengths.tolist() == [3, 5]
-    assert batch[0, 3:].abs().sum().item() == 0.0  # the tail of the shorter one is zero-padded
+    assert batch[0, 3:].abs().sum().item() == 0.0  # хвост более короткого дополнен нулями
     assert batch[1].abs().sum().item() == 5.0
 
 
-# ----------------------------------------------------------- longform assembly
+# ----------------------------------------------------------- сборка longform
 
 
 def test_longform_assembles_segments_and_joins_text(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,7 +98,7 @@ def test_longform_assembles_segments_and_joins_text(monkeypatch: pytest.MonkeyPa
     model = _FakeASRModel([("раз", None), ("два", None), ("три", None)])
     eng = _bare_engine(settings, model)
 
-    # 60s of silence (int16); we don't call the real VAD — speech_intervals is mocked.
+    # 60с тишины (int16); реальный VAD не вызываем — speech_intervals замокан.
     monkeypatch.setattr(
         gigaam_engine,
         "decode_to_int16_16k_mono",
@@ -121,7 +121,7 @@ def test_longform_assembles_segments_and_joins_text(monkeypatch: pytest.MonkeyPa
 
 def test_longform_shifts_and_rounds_word_timestamps(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(MODEL="v3_ctc", BATCH_SIZE=4)
-    # Words with LOCAL timestamps (from the chunk start) — the engine shifts them by seg_start.
+    # Слова с ЛОКАЛЬНЫМИ таймстемпами (от начала чанка) — движок сдвигает их на seg_start.
     model = _FakeASRModel(
         [
             ("раз", [_word("раз", 0.1234, 0.5)]),
@@ -143,8 +143,8 @@ def test_longform_shifts_and_rounds_word_timestamps(monkeypatch: pytest.MonkeyPa
     result = eng._transcribe_longform("x.wav", word_timestamps=True)
 
     seg0, seg1 = result.segments
-    assert seg0.words == [WordTS(text="раз", start=0.123, end=0.5)]  # shift 0 + rounding to 3
-    assert seg1.words == [WordTS(text="два", start=19.2, end=19.6)]  # shift +19.0
+    assert seg0.words == [WordTS(text="раз", start=0.123, end=0.5)]  # сдвиг 0 + округление до 3
+    assert seg1.words == [WordTS(text="два", start=19.2, end=19.6)]  # сдвиг +19.0
 
 
 def test_longform_batches_by_batch_size(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,7 +164,7 @@ def test_longform_batches_by_batch_size(monkeypatch: pytest.MonkeyPatch) -> None
 
     eng._transcribe_longform("x.wav", word_timestamps=False)
 
-    # 3 chunks at BATCH_SIZE=2 → batches [2, 1].
+    # 3 чанка при BATCH_SIZE=2 → батчи [2, 1].
     assert model.forward_calls == 2
     assert model.batch_sizes == [2, 1]
 
@@ -185,10 +185,10 @@ def test_longform_no_speech_returns_empty(monkeypatch: pytest.MonkeyPatch) -> No
     assert result.text == ""
     assert result.segments == []
     assert result.duration == pytest.approx(60.0)
-    assert model.forward_calls == 0  # inference was not run
+    assert model.forward_calls == 0  # инференс не запускался
 
 
-# ---------------------------------------------------------------- routing
+# ---------------------------------------------------------------- маршрутизация
 
 
 def test_transcribe_routes_short_for_short_audio(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -233,7 +233,7 @@ def test_transcribe_raises_when_exceeding_max_audio_seconds(
 
 def test_longform_cancels_between_batches(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(MODEL="v3_ctc", BATCH_SIZE=1)
-    model = _FakeASRModel([("раз", None)])  # enough for one processed batch
+    model = _FakeASRModel([("раз", None)])  # хватает на один обработанный батч
     eng = _bare_engine(settings, model)
     monkeypatch.setattr(
         gigaam_engine,
@@ -247,7 +247,7 @@ def test_longform_cancels_between_batches(monkeypatch: pytest.MonkeyPatch) -> No
     )
 
     class _CancelAfter:
-        """cancel_check that returns True starting from the (after+1)-th call."""
+        """cancel_check, возвращающий True начиная с (after+1)-го вызова."""
 
         def __init__(self, after: int) -> None:
             self.calls = 0
@@ -260,14 +260,14 @@ def test_longform_cancels_between_batches(monkeypatch: pytest.MonkeyPatch) -> No
     with pytest.raises(InferenceCancelledError):
         eng._transcribe_longform("x.wav", word_timestamps=False, cancel_check=_CancelAfter(1))
 
-    assert model.forward_calls == 1  # only the first batch made it
+    assert model.forward_calls == 1  # успел отработать только первый батч
 
 
-# ---------------------------------------------------- iter_segments (streaming)
+# ---------------------------------------------------- iter_segments (стриминг)
 
 
 class _CancelAfter:
-    """cancel_check that returns True starting from the (after+1)-th call."""
+    """cancel_check, возвращающий True начиная с (after+1)-го вызова."""
 
     def __init__(self, after: int) -> None:
         self.calls = 0
@@ -315,7 +315,7 @@ def test_iter_segments_short_yields_single_segment(monkeypatch: pytest.MonkeyPat
 
 def test_iter_segments_cancels_between_batches(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(MODEL="v3_ctc", BATCH_SIZE=1)
-    model = _FakeASRModel([("раз", None)])  # enough for one processed batch
+    model = _FakeASRModel([("раз", None)])  # хватает на один обработанный батч
     eng = _bare_engine(settings, model)
     monkeypatch.setattr(gigaam_engine, "probe_duration", lambda path: 60.0)
     _mock_longform_audio(monkeypatch, [(0.0, 18.0), (19.0, 37.0), (38.0, 56.0)])
@@ -325,7 +325,7 @@ def test_iter_segments_cancels_between_batches(monkeypatch: pytest.MonkeyPatch) 
         for seg in eng.iter_segments("x.wav", word_timestamps=False, cancel_check=_CancelAfter(1)):
             got.append(seg)
 
-    assert [s.text for s in got] == ["раз"]  # the first chunk was yielded before cancellation
+    assert [s.text for s in got] == ["раз"]  # первый чанк отдан до отмены
     assert model.forward_calls == 1
 
 
@@ -347,7 +347,7 @@ def test_transcribe_too_long_valueerror_falls_back_to_longform(
             raise ValueError("Too long wav file, use 'transcribe_longform' method.")
 
     eng = _bare_engine(Settings(MODEL="v3_ctc"), _ModelTooLong())
-    monkeypatch.setattr(gigaam_engine, "probe_duration", lambda path: 24.0)  # short path
+    monkeypatch.setattr(gigaam_engine, "probe_duration", lambda path: 24.0)  # короткий путь
     calls: list[str] = []
     monkeypatch.setattr(
         eng, "_transcribe_longform", _recorder(calls, "long", ASRResult("", 24.0, []))

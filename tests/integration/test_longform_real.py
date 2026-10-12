@@ -1,8 +1,8 @@
-"""Integration: longform on the real v3_ctc model + a long sample (~40s).
+"""Интеграция: longform на реальной модели v3_ctc + длинный образец (~40с).
 
-The sample `ru_long_sample.wav` is a GigaAM long_example trimmed to 40s (real RU speech
-with pauses), committed into data/. DEVICE=cpu — determinism and parity with prod CPU.
-Graceful skip without network/weights, so that make pre-commit stays green offline.
+Образец `ru_long_sample.wav` — это GigaAM long_example, обрезанный до 40с (реальная русская речь
+с паузами), закоммичен в data/. DEVICE=cpu — детерминизм и соответствие продакшн-CPU.
+Мягкий пропуск без сети/весов, чтобы make pre-commit оставался зелёным офлайн.
 """
 
 from itertools import pairwise
@@ -27,7 +27,7 @@ def engine(tmp_path_factory: pytest.TempPathFactory) -> GigaAMEngine:
     settings = Settings(MODEL="v3_ctc", DEVICE="cpu", MODELS_DIR=cache)
     try:
         return GigaAMEngine(settings)
-    except Exception as exc:  # no network / CDN unavailable / weights failed to download
+    except Exception as exc:  # нет сети / CDN недоступен / веса не скачались
         pytest.skip(f"model unavailable (no network/weights): {exc}")
 
 
@@ -41,7 +41,7 @@ def test_longform_returns_multiple_monotonic_segments(engine: GigaAMEngine) -> N
     for seg in result.segments:
         assert seg.start <= seg.end
         assert seg.text.strip()
-    # Chunk boundaries are monotonic and non-overlapping.
+    # Границы чанков монотонны и не пересекаются.
     for prev, nxt in pairwise(result.segments):
         assert prev.start < nxt.start
         assert prev.end <= nxt.start + 1e-6
@@ -53,7 +53,7 @@ def test_longform_word_timestamps_are_global(engine: GigaAMEngine) -> None:
     words = [w for seg in result.segments if seg.words for w in seg.words]
     assert len(words) > 0, "expected words with timestamps"
     assert all(w.text for w in words)
-    # Timestamps are global: within the duration and non-decreasing by start.
+    # Таймстемпы глобальны: в пределах длительности и неубывающие по start.
     for w in words:
         assert 0.0 <= w.start <= w.end <= result.duration + 0.5
     for prev, nxt in pairwise(words):

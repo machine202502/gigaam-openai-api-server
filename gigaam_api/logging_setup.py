@@ -1,7 +1,7 @@
-"""Configure stdlib logging from Settings.
+"""Настройка stdlib-логирования из Settings.
 
-Human-readable format by default; compact JSON when LOG_JSON=true.
-No external dependencies. Idempotent: a repeated call does not spawn extra handlers.
+Формат по умолчанию — human-readable; компактный JSON при LOG_JSON=true.
+Без внешних зависимостей. Идемпотентно: повторный вызов не добавляет лишние обработчики.
 """
 
 import json
@@ -9,14 +9,14 @@ import logging
 
 from gigaam_api.config import Settings
 
-# The name of our handler — it is used to ensure idempotency of setup_logging.
+# Имя нашего обработчика — по нему обеспечивается идемпотентность setup_logging.
 HANDLER_NAME = "gigaam-api"
 
 _TEXT_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
 
 class JsonFormatter(logging.Formatter):
-    """Minimal JSON formatter: one JSON line per log record."""
+    """Минималистичный JSON-форматтер: одна JSON-строка на запись лога."""
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, object] = {
@@ -31,11 +31,11 @@ class JsonFormatter(logging.Formatter):
 
 
 def setup_logging(settings: Settings) -> None:
-    """Configure the root logger from settings. Safe to call repeatedly."""
+    """Настроить корневой логгер из настроек. Безопасно вызывать многократно."""
     root = logging.getLogger()
     root.setLevel(settings.LOG_LEVEL)
 
-    # Idempotency: remove the handler we previously added before adding a new one.
+    # Идемпотентность: снимаем ранее добавленный нами обработчик перед добавлением нового.
     for handler in list(root.handlers):
         if handler.get_name() == HANDLER_NAME:
             root.removeHandler(handler)

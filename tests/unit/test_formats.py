@@ -1,6 +1,6 @@
-"""Tests for the pure render functions in formats (json/text/verbose_json/srt/vtt).
+"""Тесты чистых функций рендеринга в formats (json/text/verbose_json/srt/vtt).
 
-Also covers the time formatter.
+Также покрывает форматтер времени.
 """
 
 import pytest
@@ -68,7 +68,7 @@ def test_compression_ratio_empty_text_is_zero() -> None:
 def test_to_srt() -> None:
     srt = formats.to_srt(_result())
     assert srt == (
-        "1\n00:00:00,000 --> 00:00:02,000\nпривет мир\n\n2\n00:00:03,000 --> 00:00:05,000\nпока\n\n"  # noqa: RUF001
+        "1\n00:00:00,000 --> 00:00:02,000\nпривет мир\n\n2\n00:00:03,000 --> 00:00:05,000\nпока\n\n"
     )
 
 
@@ -76,8 +76,8 @@ def test_to_vtt() -> None:
     vtt = formats.to_vtt(_result())
     assert vtt == (
         "WEBVTT\n\n"
-        "00:00:00.000 --> 00:00:02.000\nпривет мир\n\n"  # noqa: RUF001
-        "00:00:03.000 --> 00:00:05.000\nпока\n\n"  # noqa: RUF001
+        "00:00:00.000 --> 00:00:02.000\nпривет мир\n\n"
+        "00:00:03.000 --> 00:00:05.000\nпока\n\n"
     )
 
 

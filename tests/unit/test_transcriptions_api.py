@@ -1,8 +1,8 @@
-"""Tests for POST /v1/audio/transcriptions: response formats + unhappy flow.
+"""Тесты POST /v1/audio/transcriptions: форматы ответа + негативные сценарии.
 
-engine — a fake (via app.state.engine), runner — a real Runner, probe_duration
-is mocked (ffprobe cannot read the fake bytes). Focus: all formats, 413/400, ignoring
-prompt/temperature, words by granularity, cancellation → 499.
+engine — фейк (через app.state.engine), runner — настоящий Runner, probe_duration
+замокан (ffprobe не может прочитать поддельные байты). Фокус: все форматы, 413/400,
+игнорирование prompt/temperature, слова по гранулярности, отмена → 499.
 """
 
 import json
@@ -95,7 +95,7 @@ def _post(client: TestClient, **kwargs: Any) -> Any:
 
 def test_json_format() -> None:
     client = TestClient(_build(_FakeEngine(result=_RESULT)))
-    resp = _post(client)  # response_format defaults to json
+    resp = _post(client)  # response_format по умолчанию json
     assert resp.status_code == 200
     assert resp.json() == {"text": "привет мир"}
 
@@ -155,7 +155,7 @@ def test_invalid_response_format_rejected_400() -> None:
 
 def test_oversize_upload_rejected_413() -> None:
     client = TestClient(_build(_FakeEngine(result=_RESULT), settings=Settings(MAX_UPLOAD_MB=1)))
-    big = b"\x00" * (1024 * 1024 + 16)  # >1 MB
+    big = b"\x00" * (1024 * 1024 + 16)  # >1 МБ
     resp = client.post("/v1/audio/transcriptions", files={"file": ("big.wav", big, "audio/wav")})
     assert resp.status_code == 413
 
@@ -199,7 +199,7 @@ def test_queue_full_returns_503() -> None:
     assert resp.status_code == 503
 
 
-# ----------------------------------------------------------------- streaming (SSE)
+# ----------------------------------------------------------------- стриминг (SSE)
 
 _MULTI = ASRResult(
     text="раз два",
@@ -209,12 +209,12 @@ _MULTI = ASRResult(
 
 
 def _parse_sse(body: str) -> list[Any]:
-    """Parse an SSE body into a list of payloads (a `dict` or the `[DONE]` string)."""
+    """Разбирает тело SSE в список нагрузок (`dict` или строку `[DONE]`)."""
     out: list[Any] = []
     for frame in body.split("\n\n"):
         line = frame.strip()
         if not line.startswith("data: "):
-            continue  # skip heartbeat comments and empty frames
+            continue  # пропускаем комментарии heartbeat и пустые кадры
         payload = line[len("data: ") :]
         out.append(payload if payload == "[DONE]" else json.loads(payload))
     return out
@@ -229,8 +229,8 @@ def test_stream_json_emits_sse_and_done_matches_sync() -> None:
     payloads = _parse_sse(resp.text)
     deltas = [p["delta"] for p in payloads if isinstance(p, dict) and p["type"].endswith(".delta")]
     done = next(p for p in payloads if isinstance(p, dict) and p["type"].endswith(".done"))
-    assert deltas == ["раз", " два"]  # prefix space: ''.join == done.text
-    # done is identical to the synchronous text
+    assert deltas == ["раз", " два"]  # префиксный пробел: ''.join == done.text
+    # done идентичен синхронному тексту
     assert "".join(deltas) == done["text"] == _MULTI.text
     assert payloads[-1] == "[DONE]"
 
@@ -248,7 +248,7 @@ def test_stream_verbose_json_falls_back_to_sync() -> None:
     client = TestClient(_build(_FakeEngine(result=_MULTI)))
     resp = _post(client, data={"response_format": "verbose_json", "stream": "true"})
 
-    # Synchronous fallback: plain JSON, not SSE (verbose requires the full result).
+    # Синхронный fallback: обычный JSON, не SSE (verbose требует полного результата).
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("application/json")
     body = resp.json()

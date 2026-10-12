@@ -1,7 +1,7 @@
-"""Lifespan tests: loading the engine into app.state and fail-fast on error.
+"""Тесты lifespan: загрузка движка в app.state и fail-fast при ошибке.
 
-GigaAMEngine is replaced by a fake/stub — weights are not downloaded. TestClient as a
-context manager runs startup/shutdown (lifespan).
+GigaAMEngine подменяется фейком/стабом — веса не скачиваются. TestClient как контекстный
+менеджер запускает startup/shutdown (lifespan).
 """
 
 from collections.abc import Iterator
@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 import gigaam_api.asr.gigaam_engine as ge
 from gigaam_api.asr.engine import ASRResult, EngineInfo, SegmentTS
+from gigaam_api.asr.model_manager import ModelManager
 from gigaam_api.config import Settings
 from gigaam_api.main import create_app
 from gigaam_api.runner import Runner
@@ -36,11 +37,13 @@ def test_lifespan_loads_engine_and_releases(monkeypatch: pytest.MonkeyPatch) -> 
     app = create_app()
 
     with TestClient(app) as client:
-        assert isinstance(app.state.engine, _FakeEngine)
+        assert isinstance(app.state.engine, ModelManager)
+        assert isinstance(app.state.engine.engine, _FakeEngine)
+        assert app.state.engine.is_loaded is True
         assert isinstance(app.state.runner, Runner)
         assert client.get("/health").json()["loaded"] is True
 
-    # shutdown released the engine and runner
+    # shutdown освободил движок и runner
     assert app.state.engine is None
     assert app.state.runner is None
 

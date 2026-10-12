@@ -1,11 +1,11 @@
-"""PyTorch implementation of ASREngine on top of gigaam.load_model (short + longform).
+"""Реализация ASREngine на PyTorch поверх gigaam.load_model (short + longform).
 
-We resolve the device (`auto`→cuda→mps→cpu) ourselves: gigaam's built-in `auto` knows
-only cuda→cpu, without MPS.
+Устройство резолвим сами (`auto`→cuda→mps→cpu): встроенный `auto` у gigaam
+знает только cuda→cpu, без MPS.
 
-Duration-based routing inside the engine: ≤25s — the short path (delegate to
-`model.transcribe`); otherwise — our own longform loop (Silero VAD + chunking +
-batched `model.forward`/`model._decode`), without pyannote.
+Маршрутизация по длительности внутри движка: ≤25с — короткий путь (делегирование в
+`model.transcribe`); иначе — собственный longform-цикл (Silero VAD + чанкинг +
+батчированный `model.forward`/`model._decode`), без pyannote.
 """
 
 import logging
@@ -31,13 +31,13 @@ from gigaam_api.config import Settings
 
 logger = logging.getLogger(__name__)
 
-# gigaam LONGFORM_THRESHOLD = 25 * 16000 samples = exactly 25s at 16kHz.
+# gigaam LONGFORM_THRESHOLD = 25 * 16000 сэмплов = ровно 25с на 16кГц.
 SHORT_MAX_SECONDS = 25.0
 SAMPLE_RATE = 16000
 
 
 def _resolve_device(setting: str) -> str:
-    """Resolve DEVICE: `auto` → cuda→mps→cpu; an explicit value is returned as is."""
+    """Резолв DEVICE: `auto` → cuda→mps→cpu; явное значение возвращается как есть."""
     if setting != "auto":
         return setting
     if torch.cuda.is_available():
@@ -48,7 +48,7 @@ def _resolve_device(setting: str) -> str:
 
 
 def _collate(wavs: list[Tensor]) -> tuple[Tensor, Tensor]:
-    """Stack waveform slices into a batch (zero-padded) + lengths. Port of gigaam collate."""
+    """Упаковать срезы сигнала в батч (zero-padded) + длины. Порт gigaam collate."""
     lengths = torch.tensor([w.shape[-1] for w in wavs], dtype=torch.long)
     max_len = int(lengths.max().item())
     batch = torch.zeros(len(wavs), max_len, dtype=wavs[0].dtype)
@@ -58,7 +58,7 @@ def _collate(wavs: list[Tensor]) -> tuple[Tensor, Tensor]:
 
 
 class GigaAMEngine:
-    """Wrapper over the gigaam model: load once + short/longform transcription."""
+    """Обёртка над моделью gigaam: загрузка один раз + short/longform-транскрипция."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -80,9 +80,9 @@ class GigaAMEngine:
             settings.MODEL,
             device=self.device,
             download_root=str(settings.MODELS_DIR),
-            fp16_encoder=True,  # on cpu — no-op (gigaam skips half() for cpu)
+            fp16_encoder=True,  # на cpu — no-op (gigaam пропускает half() для cpu)
         )
-        self._vad = load_vad()  # Silero JIT from the bundle (no network), once
+        self._vad = load_vad()  # Silero JIT из пакета (без сети), один раз
         logger.info(
             "model loaded: %s device=%s threads=%d cache=%s in %.1fs",
             self.model_name,
@@ -126,12 +126,12 @@ class GigaAMEngine:
         word_timestamps: bool,
         cancel_check: Callable[[], bool] | None = None,
     ) -> Iterator[SegmentTS]:
-        """Segments as they become ready (for SSE streaming).
+        """Сегменты по мере готовности (для SSE-стриминга).
 
-        Routing as in `transcribe`: ≤25s — a single segment (delegate to the short path);
-        otherwise — longform chunks, each yielded right after its batch is decoded.
-        The `MAX_AUDIO_SECONDS` limit is checked on the first iteration (a safety net —
-        the handler validates duration earlier, before the stream starts)."""
+        Маршрутизация как в `transcribe`: ≤25с — один сегмент (делегирование короткому пути);
+        иначе — longform-чанки, каждый yield сразу после декодирования его батча.
+        Лимит `MAX_AUDIO_SECONDS` проверяется на первой итерации (подстраховка —
+        обработчик валидирует длительность раньше, до старта потока)."""
         duration = probe_duration(wav_path)
         max_seconds = self._settings.MAX_AUDIO_SECONDS
         logger.debug(
@@ -163,17 +163,17 @@ class GigaAMEngine:
         word_timestamps: bool,
         cancel_check: Callable[[], bool] | None = None,
     ) -> ASRResult:
-        """Short audio ≤25s: delegate decode+inference to gigaam itself.
+        """Короткое аудио ≤25с: делегируем декодирование+инференс самому gigaam.
 
-        cancel_check is not checked on the short path (fast, non-cancellable); the parameter
-        is passed only on the fallback to longform near the 25s boundary.
+        cancel_check не проверяется на коротком пути (быстро, не отменяемо); параметр
+        передаётся только для fallback в longform вблизи границы 25с.
         """
         t0 = time.perf_counter()
         try:
             result = self._model.transcribe(wav_path, word_timestamps=word_timestamps)
         except ValueError as exc:
-            # Near the 25s boundary gigaam measures length by samples, probe — by source seconds.
-            # If gigaam considered the audio long — that's not an error, but longform.
+            # Вблизи границы 25с gigaam меряет длину по сэмплам, probe — по секундам источника.
+            # Если gigaam посчитал аудио длинным — это не ошибка, а longform.
             if "too long" in str(exc).lower():
                 logger.debug("gigaam considered the audio long near the 25s boundary → longform")
                 return self._transcribe_longform(
@@ -181,7 +181,7 @@ class GigaAMEngine:
                 )
             raise
         except RuntimeError as exc:
-            # gigaam/preprocess.load_audio raises RuntimeError("Failed to load audio").
+            # gigaam/preprocess.load_audio поднимает RuntimeError("Failed to load audio").
             if "failed to load audio" in str(exc).lower():
                 raise AudioDecodeError(f"failed to decode audio: {wav_path}") from exc
             raise
@@ -205,9 +205,10 @@ class GigaAMEngine:
         return ASRResult(text=text, duration=duration, segments=[segment])
 
     def _prepare_longform(self, wav_path: str) -> tuple[Tensor, float, list[tuple[float, float]]]:
-        """Decode int16 + Silero VAD + chunking. Returns (int16 signal, duration, boundaries).
+        """Декодирование int16 + Silero VAD + чанкинг.
 
-        Memory peak — at the VAD stage (the whole signal in float); freed immediately.
+        Возвращает (int16 сигнал, длительность, границы).
+        Пик памяти — на стадии VAD (весь сигнал в float); сразу освобождается.
         """
         int16 = decode_to_int16_16k_mono(wav_path)
         duration = int16.numel() / SAMPLE_RATE
@@ -243,11 +244,11 @@ class GigaAMEngine:
         word_timestamps: bool,
         cancel_check: Callable[[], bool] | None,
     ) -> Iterator[SegmentTS]:
-        """Batched inference over chunk boundaries; yield a segment once its batch is decoded.
+        """Батчированный инференс по границам чанков; yield сегмента, как только его батч готов.
 
-        Cancellation is cooperative — checked at the start of each batch (between
-        batches). The shared longform core: used by both the synchronous
-        `_transcribe_longform` and the `iter_segments` stream.
+        Отмена кооперативная — проверяется в начале каждого батча (между батчами).
+        Общее ядро longform: используется и синхронным `_transcribe_longform`,
+        и потоком `iter_segments`.
         """
         if not chunks:
             return
@@ -271,11 +272,11 @@ class GigaAMEngine:
             wav_pad, wav_lens = _collate(slices)
             wav_pad = wav_pad.to(self.device).to(self._model._dtype)
             wav_lens = wav_lens.to(self.device)
-            # gigaam.transcribe/transcribe_longform are wrapped in @torch.inference_mode();
-            # our longform calls forward/_decode directly → we wrap it ourselves. Without this
-            # autograd is on, and the encoder's rotary cos/sin cache, created by the short path
-            # (under inference_mode) as inference tensors, breaks forward:
-            # "Inference tensors cannot be saved for backward" (short→long on a single engine).
+            # gigaam.transcribe/transcribe_longform обёрнуты в @torch.inference_mode();
+            # наш longform вызывает forward/_decode напрямую → оборачиваем сами. Без этого
+            # autograd включён, и rotary cos/sin-кэш энкодера, созданный коротким путём
+            # (под inference_mode) как inference-тензоры, ломает forward:
+            # "Inference tensors cannot be saved for backward" (short→long на одном движке).
             with torch.inference_mode():
                 encoded, encoded_len = self._model.forward(wav_pad, wav_lens)
                 decoded = self._model._decode(encoded, encoded_len, wav_lens, word_timestamps)
@@ -306,7 +307,7 @@ class GigaAMEngine:
         word_timestamps: bool,
         cancel_check: Callable[[], bool] | None = None,
     ) -> ASRResult:
-        """Long audio >25s (sync): VAD → chunking → batched inference → join into ASRResult."""
+        """Длинное аудио >25с: VAD → чанкинг → батчированный инференс → склейка в ASRResult."""
         t0 = time.perf_counter()
         int16, duration, chunks = self._prepare_longform(wav_path)
         segments = list(

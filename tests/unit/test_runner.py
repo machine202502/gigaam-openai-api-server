@@ -1,4 +1,4 @@
-"""Runner tests: serialization (one at a time), backpressure (QueueFullError), shutdown."""
+"""Тесты Runner: сериализация (по одному за раз), backpressure (QueueFullError), остановка."""
 
 import asyncio
 import threading
@@ -25,7 +25,7 @@ async def test_run_serializes_one_at_a_time() -> None:
     state: dict[str, int] = {"concurrent": 0, "max": 0}
 
     def work(_: int) -> int:
-        # Safe: a single worker guarantees serial execution — there is no real parallelism.
+        # Безопасно: единственный воркер гарантирует последовательное выполнение — параллелизма нет.
         state["concurrent"] += 1
         state["max"] = max(state["max"], state["concurrent"])
         time.sleep(0.02)
@@ -34,7 +34,7 @@ async def test_run_serializes_one_at_a_time() -> None:
 
     try:
         await asyncio.gather(*[runner.run(work, i) for i in range(4)])
-        assert state["max"] == 1  # never more than one at a time
+        assert state["max"] == 1  # никогда не больше одного одновременно
     finally:
         runner.shutdown()
 
@@ -45,9 +45,9 @@ def test_try_acquire_enforces_max_queue_and_release_frees() -> None:
         runner.try_acquire()
         runner.try_acquire()
         with pytest.raises(QueueFullError):
-            runner.try_acquire()  # over the limit — backpressure
+            runner.try_acquire()  # сверх лимита — backpressure
         runner.release()
-        runner.try_acquire()  # slot freed → can acquire again
+        runner.try_acquire()  # слот освобождён → можно снова захватить
     finally:
         runner.shutdown()
 
@@ -74,10 +74,10 @@ async def test_submit_and_run_share_single_worker() -> None:
         return tag
 
     try:
-        fut = runner.submit(slow, "a")  # occupies the single worker
-        await runner.run(slow, "b")  # must wait for "a" to finish (1 worker)
+        fut = runner.submit(slow, "a")  # занимает единственный воркер
+        await runner.run(slow, "b")  # должен дождаться завершения "a" (1 воркер)
         await asyncio.wrap_future(fut)
-        assert order == ["start:a", "end:a", "start:b", "end:b"]  # strictly serial
+        assert order == ["start:a", "end:a", "start:b", "end:b"]  # строго последовательно
     finally:
         runner.shutdown()
 
@@ -95,8 +95,8 @@ async def test_queue_full_raises_when_over_limit() -> None:
 
     task = asyncio.create_task(runner.run(blocker))
     try:
-        await asyncio.sleep(0)  # let the task start and occupy the single slot
-        await asyncio.to_thread(started.wait, 5)  # wait until the single slot is occupied
+        await asyncio.sleep(0)  # даём задаче стартовать и занять единственный слот
+        await asyncio.to_thread(started.wait, 5)  # ждём, пока единственный слот будет занят
         with pytest.raises(QueueFullError):
             await runner.run(lambda: "second")
     finally:

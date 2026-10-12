@@ -1,8 +1,8 @@
-"""OpenAI-compatible error format + registration of exception handlers.
+"""OpenAI-совместимый формат ошибок + регистрация обработчиков исключений.
 
-Body: {"error":{message,type,param,code}}. Code mapping: broken file→400,
-limits→400/413, tool not found→500, queue→503, auth→401,
-unexpected→500. 415 is not used (OpenAI returns 400).
+Тело: {"error":{message,type,param,code}}. Маппинг кодов: битый файл→400,
+лимиты→400/413, инструмент не найден→500, очередь→503, auth→401,
+неожиданное→500. 415 не используется (OpenAI возвращает 400).
 """
 
 import logging
@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 
 
 class AuthError(Exception):
-    """Missing/invalid Bearer key (→ 401)."""
+    """Отсутствует/неверный Bearer-ключ (→ 401)."""
 
 
 class PayloadTooLargeError(Exception):
-    """Upload exceeded MAX_UPLOAD_MB (→ 413)."""
+    """Загрузка превысила MAX_UPLOAD_MB (→ 413)."""
 
 
 class OpenAIErrorDetail(BaseModel):
@@ -46,13 +46,13 @@ def error_response(
     param: str | None = None,
     code: str | None = None,
 ) -> JSONResponse:
-    """Build a JSONResponse in the OpenAI error format."""
+    """Собрать JSONResponse в формате ошибки OpenAI."""
     body = OpenAIError(error=OpenAIErrorDetail(message=message, type=type_, param=param, code=code))
     return JSONResponse(status_code=status_code, content=body.model_dump())
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-    """Register all handlers on the application."""
+    """Зарегистрировать все обработчики на приложении."""
 
     @app.exception_handler(AudioDecodeError)
     async def _decode(request: Request, exc: AudioDecodeError) -> JSONResponse:

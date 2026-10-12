@@ -1,8 +1,8 @@
-"""Unit tests for the SSE renderer: event format, delta-concatenation invariant, heartbeat, error.
+"""Юнит-тесты рендерера SSE: формат события, инвариант склейки дельт, heartbeat, ошибка.
 
-`sse_transcription` — a pure async generator over an async iterator of segments:
-delta xN (prefix space) → done → [DONE]; HEARTBEAT marker → SSE comment;
-exception in the source → error event and close (no [DONE] afterward).
+`sse_transcription` — чистый асинхронный генератор поверх асинхронного итератора сегментов:
+delta xN (префиксный пробел) → done → [DONE]; маркер HEARTBEAT → комментарий SSE;
+исключение в источнике → событие error и закрытие (без [DONE] после).
 """
 
 import json
@@ -42,7 +42,7 @@ async def _collect(agen: AsyncIterator[str]) -> list[str]:
 
 
 def _data(frame: str) -> Any:
-    """Parse the payload of an SSE frame `data: <json>\\n\\n` into an object/string."""
+    """Разбирает полезную нагрузку SSE-кадра `data: <json>\\n\\n` в объект/строку."""
     assert frame.startswith("data: ") and frame.endswith("\n\n")
     payload = frame[len("data: ") : -2]
     return payload if payload == "[DONE]" else json.loads(payload)
@@ -78,15 +78,15 @@ async def test_emits_deltas_done_and_terminator() -> None:
     ]
     done = next(p for p in payloads if isinstance(p, dict) and p["type"] == "transcript.text.done")
 
-    # the separator "shifts" to the start of the next delta
+    # разделитель "сдвигается" в начало следующей дельты
     assert deltas == ["раз", " два", " три"]
-    assert "".join(deltas) == done["text"] == "раз два три"  # the OpenAI invariant
+    assert "".join(deltas) == done["text"] == "раз два три"  # инвариант OpenAI
     assert payloads[-1] == "[DONE]"
 
 
 @pytest.mark.asyncio
 async def test_done_text_matches_sync_join() -> None:
-    # The full done text must match the synchronous ' '.join(segment texts).
+    # Полный текст done должен совпадать с синхронным ' '.join(текстов сегментов).
     segs = [_seg("первый"), _seg("второй")]
     frames = await _collect(sse_transcription(_aiter(segs), request_id="rid"))
     done = next(_data(f) for f in frames if '"transcript.text.done"' in f)
@@ -104,7 +104,7 @@ async def test_error_event_on_source_exception_and_no_done() -> None:
     assert err["type"] == "error"
     assert err["error"]["message"] == "inference failed"
     assert err["error"]["type"] == "api_error"
-    # After an error the stream is closed: neither done nor [DONE].
+    # После ошибки поток закрыт: ни done, ни [DONE].
     assert not any(p == "[DONE]" for p in payloads)
     assert not any(isinstance(p, dict) and p["type"] == "transcript.text.done" for p in payloads)
 
@@ -114,12 +114,12 @@ async def test_heartbeat_marker_renders_comment_and_is_not_text() -> None:
     items: list[StreamItem] = [_seg("раз"), HEARTBEAT, _seg("два")]
     frames = await _collect(sse_transcription(_aiter(items), request_id="rid"))
 
-    assert ": keep-alive\n\n" in frames  # an SSE comment, not a data event
+    assert ": keep-alive\n\n" in frames  # комментарий SSE, а не событие data
     done = next(_data(f) for f in frames if '"transcript.text.done"' in f)
-    assert done["text"] == "раз два"  # the heartbeat did not leak into the text
+    assert done["text"] == "раз два"  # heartbeat не попал в текст
 
 
-# ------------------------------------------- stream_segments (thread→async bridge)
+# ------------------------------------------- stream_segments (мост thread→async)
 
 
 @pytest.mark.asyncio
@@ -139,7 +139,7 @@ async def test_stream_segments_yields_items_then_done() -> None:
         ):
             out.append(item)
         assert [s.text for s in out if isinstance(s, SegmentTS)] == ["раз", "два"]
-        assert closed.wait(1.0)  # on_done is called once the producer finishes (the worker is free)
+        assert closed.wait(1.0)  # on_done вызывается по завершении продюсера (воркер свободен)
     finally:
         runner.shutdown()
 
@@ -149,7 +149,7 @@ async def test_stream_segments_emits_heartbeat_when_producer_idle() -> None:
     runner = Runner(max_queue=4)
 
     def slow() -> Iterator[SegmentTS]:
-        time.sleep(0.15)  # longer than heartbeat_interval → the consumer gets a chance to "idle"
+        time.sleep(0.15)  # дольше heartbeat_interval → у консьюмера появляется шанс «простоять»
         yield _seg("раз")
 
     try:
@@ -163,7 +163,7 @@ async def test_stream_segments_emits_heartbeat_when_producer_idle() -> None:
             on_done=lambda: None,
         ):
             items.append(item)
-        assert any(it is HEARTBEAT for it in items)  # at least one heartbeat during the idle period
+        assert any(it is HEARTBEAT for it in items)  # хотя бы один heartbeat за период простоя
         assert [s.text for s in items if isinstance(s, SegmentTS)] == ["раз"]
     finally:
         runner.shutdown()
@@ -191,7 +191,7 @@ async def test_stream_segments_propagates_producer_error_and_still_cleans_up() -
             ):
                 out.append(item)
         assert [s.text for s in out if isinstance(s, SegmentTS)] == ["раз"]
-        assert closed.wait(1.0)  # cleanup runs even on a producer error
+        assert closed.wait(1.0)  # очистка выполняется даже при ошибке продюсера
     finally:
         runner.shutdown()
 
@@ -203,7 +203,7 @@ async def test_stream_segments_sets_cancel_on_consumer_close() -> None:
 
     def cancellable() -> Iterator[SegmentTS]:
         i = 0
-        while not cancel.is_set():  # like iter_segments — reacts to cancellation
+        while not cancel.is_set():  # как iter_segments — реагирует на отмену
             yield _seg(f"s{i}")
             time.sleep(0.02)
             i += 1
@@ -219,7 +219,7 @@ async def test_stream_segments_sets_cancel_on_consumer_close() -> None:
         )
         first = await agen.__anext__()
         assert isinstance(first, SegmentTS)
-        await agen.aclose()  # the consumer went away
-        assert cancel.is_set()  # the bridge's finally set the cancel flag
+        await agen.aclose()  # консьюмер ушёл
+        assert cancel.is_set()  # finally моста установил флаг отмены
     finally:
         runner.shutdown()

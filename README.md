@@ -1,100 +1,102 @@
-# GigaAM ASR — OpenAI-compatible Russian speech recognition service
+# GigaAM ASR — OpenAI-совместимый сервис распознавания русской речи
 
-> **Languages:** **English** · [Russian](README_ru.md)
+Self-hosted ASR-сервер на базе [GigaAM](https://github.com/salute-developers/GigaAM),
+выставляющий **OpenAI-совместимый** API (`POST /v1/audio/transcriptions`). Любой клиент, умеющий
+работать с «Custom OpenAI Compatible Whisper Provider», работает с этим сервисом без доработок.
 
-A self-hosted ASR server built on [GigaAM](https://github.com/salute-developers/GigaAM),
-exposing an **OpenAI-compatible** API (`POST /v1/audio/transcriptions`). Any client that can talk to
-a "Custom OpenAI Compatible Whisper Provider" works with this service unchanged.
+Цель — **self-hosted OpenAI-совместимый сервер для личного использования**: работает в **Docker**-контейнере
+(CPU) на любом хосте — Linux-сервере, NAS или мини-ПК; разработка — на **macOS** (нативно через uv,
+опционально MPS).
 
-The goal is a self-hosted OpenAI-compatible server for personal use: it runs as a **Docker** container
-(CPU) on any host — a Linux server, NAS, or mini-PC — while development happens on **macOS** (natively
-via uv, optionally MPS).
+## Возможности
 
-## Features
-
-- `POST /v1/audio/transcriptions` (multipart) — synchronous: one request → full transcript.
-- Short (≤25s) and long (up to ~10h) audio: long files are split via **Silero VAD** + chunking and
-  processed in batches (no pyannote).
-- Response formats: `json`, `text`, `verbose_json`, `srt`, `vtt`.
-- Word- and segment-level timestamps (`timestamp_granularities[]`).
-- Optional **`stream=true`** (SSE) — progressive delivery for `json`/`text` (protection against
-  timeouts on multi-hour files).
+- `POST /v1/audio/transcriptions` (multipart) — синхронно: один запрос → полный транскрипт.
+- Короткие (≤25с) и длинные (до ~10ч) аудио: длинные режутся через **Silero VAD** + чанкинг и
+  считаются батчами (без pyannote).
+- Форматы ответа: `json`, `text`, `verbose_json`, `srt`, `vtt`.
+- Word- и segment-level таймстемпы (`timestamp_granularities[]`).
+- Опциональный **`stream=true`** (SSE) — прогрессивная отдача для `json`/`text` (защита от таймаутов
+  на многочасовых файлах).
 - `GET /v1/models`, `GET /health`.
-- **Bearer authentication** (single shared key from `.env`).
-- Any input audio format supported by ffmpeg.
+- **Bearer-аутентификация** (один общий ключ из `.env`).
+- Любой формат входного аудио, поддерживаемый ffmpeg.
+- **Автовыгрузка модели по простою** — если модель не используется дольше `IDLE_UNLOAD_SECONDS` (по умолчанию 5 минут),
+  она выгружается из памяти и загружается автоматически при следующем запросе.
+- **Веб-панель управления** на отдельном порту (`UI_PORT` = `8001`) — показывает состояние модели,
+  позволяет задать порог автовыгрузки и вручную загрузить/выгрузить модель.
 
-**Out of scope:** translation (`/v1/audio/translations` — GigaAM is Russian ASR only), WebSocket/realtime,
-diarization (single speaker).
+**Вне scope:** перевод (`/v1/audio/translations` — GigaAM только русское ASR), WebSocket/realtime,
+диаризация (спикер один).
 
-## Requirements
+## Требования
 
-- **Host hardware (production).** CPU-only, no GPU required. Minimum **2 CPU cores / 2 GB RAM**;
-  recommended **4 cores / 4–8 GB RAM** (depending on load and audio length — long files need more).
-- **Python 3.12** (see `.python-version`) — for native dev runs.
-- **[uv](https://docs.astral.sh/uv/)** — package and environment manager (dev).
-- **ffmpeg** (with `ffprobe`) — required: audio decoding and duration probing. **The Docker image
-  already bundles ffmpeg+ffprobe** (installed from apt) — the container is self-contained, nothing
-  needs to be installed on the host. Only for native dev runs on macOS install ffmpeg on your system
+- **Железо (прод-хост).** Только CPU, GPU не нужен. Минимум **2 ядра / 2 ГБ RAM**; рекомендуется
+  **4 ядра / 4–8 ГБ RAM** (зависит от нагрузки и длины аудио — длинным файлам нужно больше).
+- **Python 3.12** (см. `.python-version`) — для нативного dev-запуска.
+- **[uv](https://docs.astral.sh/uv/)** — менеджер пакетов и окружений (dev).
+- **ffmpeg** (с `ffprobe`) — обязателен: декодирование аудио и probe длительности. **В Docker-образе
+  ffmpeg+ffprobe уже встроены** (ставятся в образ из apt) — контейнер самодостаточен, на хосте
+  ставить ничего не нужно. Только для нативного dev-запуска на macOS установите ffmpeg в систему
   (`brew install ffmpeg`).
-- **Docker** + **Docker Compose** — for self-hosted deployment. On a dev Mac, Docker is optional.
+- **Docker** + **Docker Compose** — для self-hosted деплоя. На dev-Mac Docker опционален.
 
 ---
 
-## Quick start
+## Быстрый старт
 
-### Dev (macOS, native via uv)
+### Dev (macOS, нативно через uv)
 
 ```bash
-make install              # uv sync — install dependencies
-cp .env.example .env       # edit as needed (see the note on MODELS_DIR on Mac below)
-make run                  # uvicorn --reload on http://localhost:8000
+make install              # uv sync — установка зависимостей
+cp .env.example .env       # отредактируйте при необходимости (см. ниже про MODELS_DIR на Mac)
+make run                  # python -m gigaam_api.serve на http://localhost:8000 (UI на :8001)
 ```
 
-Health check:
+> Для автоперезагрузки API без UI: `make run-api` (uvicorn --reload).
+
+Проверка здоровья:
 
 ```bash
 curl http://localhost:8000/health
 # {"status":"ok","model":"v3_ctc","device":"mps","loaded":true}
 ```
 
-> **MODELS_DIR on Mac.** The default `MODELS_DIR=/data/models` is meant for the container and is not
-> writable on macOS. For native dev set an accessible path in `.env`, e.g. `MODELS_DIR=./models`
-> or `MODELS_DIR=~/.cache/gigaam`.
+> **MODELS_DIR на Mac.** Дефолт `MODELS_DIR=/data/models` рассчитан на контейнер и на macOS не
+> записываем. Для нативного dev укажите в `.env` доступный путь, например `MODELS_DIR=./models`
+> или `MODELS_DIR=~/.cache/gigaam`.
 
-> The model is loaded once at startup (lifespan); the first start downloads the weights into
-> `MODELS_DIR` (on dev — from the CDN, takes minutes). `device` is the **resolution** of `DEVICE`
-> (`auto` → cuda→mps→cpu): on a dev Mac `auto`→`mps`, in a Docker deployment→`cpu`. On MPS errors —
-> `PYTORCH_ENABLE_MPS_FALLBACK=1`.
+> Модель грузится один раз при старте (lifespan); первый старт скачивает веса в `MODELS_DIR`
+> (на dev — с CDN, минуты). `device` — это **резолв** `DEVICE` (`auto` → cuda→mps→cpu): на dev-Mac
+> `auto`→`mps`, в Docker-деплое→`cpu`. При ошибках MPS — `PYTORCH_ENABLE_MPS_FALLBACK=1`.
 
-### Production (Docker Compose)
+### Прод (Docker Compose)
 
-Full instructions are in the [Deploy (Docker Compose)](#deploy-docker-compose) section. In short: place
-`docker-compose.yml` + `Dockerfile` + `.env` on the host, create a `./models` directory (owned by
-UID 1000), and bring the project up with `docker compose up -d`. The first start downloads the weights →
-the healthcheck becomes `healthy`.
+Полная инструкция — в разделе [«Деплой (Docker Compose)»](#деплой-docker-compose). Вкратце: положить на хост
+`docker-compose.yml` + `Dockerfile` + `.env`, создать каталог `./models` (владелец UID 1000),
+поднять проект через `docker compose up -d`. Первый старт скачает веса → healthcheck станет `healthy`.
 
 ---
 
-## API (OpenAI-compatible)
+## API (OpenAI-совместимый)
 
-Base URL: `http://<host>:8000/v1`. Authentication — the `Authorization: Bearer <API_KEY>` header
-(if `API_KEY` in `.env` is empty, auth is disabled).
+Базовый URL: `http://<host>:8000/v1`. Аутентификация — заголовок `Authorization: Bearer <API_KEY>`
+(если `API_KEY` в `.env` пуст — auth выключен).
 
 ### `POST /v1/audio/transcriptions` (multipart/form-data)
 
-| Field | Behavior |
+| Поле | Поведение |
 |---|---|
-| `file` | **Required.** Any format supported by ffmpeg. |
-| `model` | Validated against `ALLOWED_MODELS` (otherwise `400`). The model actually loaded by the service is used. |
-| `response_format` | `json` (default) · `text` · `verbose_json` · `srt` · `vtt`. |
-| `timestamp_granularities[]` | `segment` and/or `word` (controls presence of `segments`/`words` in `verbose_json`). |
-| `language` | Accepted; GigaAM is RU-only, has no effect on inference. |
-| `stream` | `true` → **SSE streaming** for `json`/`text`; for `verbose_json`/`srt`/`vtt` — synchronous fallback (full response). |
-| `prompt`, `temperature` | **Accepted and ignored** (greedy decoding; prompt is not supported). |
+| `file` | **Обязательно.** Любой формат, поддерживаемый ffmpeg. |
+| `model` | Валидируется по `ALLOWED_MODELS` (иначе `400`). Фактически используется загруженная сервисом модель. |
+| `response_format` | `json` (деф) · `text` · `verbose_json` · `srt` · `vtt`. |
+| `timestamp_granularities[]` | `segment` и/или `word` (влияет на наличие `segments`/`words` в `verbose_json`). |
+| `language` | Принимается; GigaAM — только RU, на инференс не влияет. |
+| `stream` | `true` → **SSE-стриминг** для `json`/`text`; для `verbose_json`/`srt`/`vtt` — синхронный фоллбэк (полный ответ). |
+| `prompt`, `temperature` | **Принимаются и игнорируются** (greedy-декодинг; prompt не поддержан). |
 
-#### Examples (`curl`)
+#### Примеры (`curl`)
 
-`json` (default) → `{"text":"..."}`:
+`json` (по умолчанию) → `{"text":"..."}`:
 
 ```bash
 curl -s http://localhost:8000/v1/audio/transcriptions \
@@ -103,7 +105,7 @@ curl -s http://localhost:8000/v1/audio/transcriptions \
   -F model=v3_ctc
 ```
 
-`text` → plain text:
+`text` → просто текст:
 
 ```bash
 curl -s http://localhost:8000/v1/audio/transcriptions \
@@ -111,7 +113,7 @@ curl -s http://localhost:8000/v1/audio/transcriptions \
   -F file=@audio.mp3 -F model=v3_ctc -F response_format=text
 ```
 
-`verbose_json` with word timestamps (`segments`/`words` fields):
+`verbose_json` с word-таймстемпами (поля `segments`/`words`):
 
 ```bash
 curl -s http://localhost:8000/v1/audio/transcriptions \
@@ -122,7 +124,7 @@ curl -s http://localhost:8000/v1/audio/transcriptions \
   -F "timestamp_granularities[]=word"
 ```
 
-`srt` / `vtt` → subtitles:
+`srt` / `vtt` → субтитры:
 
 ```bash
 curl -s http://localhost:8000/v1/audio/transcriptions \
@@ -130,43 +132,43 @@ curl -s http://localhost:8000/v1/audio/transcriptions \
   -F file=@audio.mp3 -F model=v3_ctc -F response_format=srt
 ```
 
-> In `verbose_json` the fields `tokens`/`avg_logprob`/`no_speech_prob`/`temperature` = `0.0`, `seek` = `0`
-> (GigaAM does not provide them — best-effort, safe for Whisper client thresholds); `compression_ratio`
-> is computed honestly (`len(b)/len(zlib.compress(b))`, in bytes).
+> В `verbose_json` поля `tokens`/`avg_logprob`/`no_speech_prob`/`temperature` = `0.0`, `seek` = `0`
+> (GigaAM их не отдаёт — best-effort, безопасно для клиентских порогов Whisper); `compression_ratio`
+> считается честно (`len(b)/len(zlib.compress(b))`, в байтах).
 
-#### Example (`openai` Python SDK)
+#### Пример (`openai` Python SDK)
 
-The service is configured as a "Custom OpenAI Compatible Whisper Provider": `base_url`, `api_key`, `model`.
+Сервис настраивается как «Custom OpenAI Compatible Whisper Provider»: `base_url`, `api_key`, `model`.
 
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="your-key")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="ваш-ключ")
 with open("audio.mp3", "rb") as f:
     print(client.audio.transcriptions.create(file=f, model="v3_ctc").text)
 ```
 
-### Streaming (`stream=true`, SSE)
+### Стриминг (`stream=true`, SSE)
 
-Progressive delivery of the transcript via [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events)
-— so multi-hour files don't hit client/proxy timeouts. Supported for `response_format` `json`/`text`;
-for `verbose_json`/`srt`/`vtt` `stream` is ignored (synchronous full response — these formats require
-the whole result).
+Прогрессивная отдача транскрипта по [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events)
+— чтобы многочасовые файлы не упирались в таймауты клиента/прокси. Поддерживается для
+`response_format` `json`/`text`; для `verbose_json`/`srt`/`vtt` `stream` игнорируется (синхронный
+полный ответ — эти форматы требуют целого результата).
 
 - `Content-Type: text/event-stream` (+ `Cache-Control: no-cache`, `Connection: keep-alive`).
-- For each ready segment: `data: {"type":"transcript.text.delta","delta":"<text chunk>"}`.
-- At the end: `data: {"type":"transcript.text.done","text":"<full text>"}`, then `data: [DONE]`.
-- Error mid-stream: `data: {"type":"error","error":{...}}` and the stream closes (no `[DONE]`).
-- While a batch is being computed, an SSE comment `: keep-alive` is sent periodically (every ~15s) —
-  it keeps the connection alive against proxy idle timeouts (on CPU a single batch can take minutes).
+- На каждый готовый сегмент: `data: {"type":"transcript.text.delta","delta":"<кусок текста>"}`.
+- В конце: `data: {"type":"transcript.text.done","text":"<полный текст>"}`, затем `data: [DONE]`.
+- Ошибка в середине: `data: {"type":"error","error":{...}}` и закрытие потока (без `[DONE]`).
+- Во время счёта батча периодически шлётся SSE-комментарий `: keep-alive` (раз в ~15с) —
+  держит соединение против idle-таймаутов прокси (на CPU один батч может считаться минутами).
 
-**Invariant:** the concatenation of all `delta`s exactly equals `done.text` and is **identical to the
-synchronous** response for the same file (the separating space moves to the start of the next `delta`).
+**Инвариант:** конкатенация всех `delta` точно равна `done.text` и **идентична синхронному** ответу
+на тот же файл (разделитель-пробел уезжает в начало следующего `delta`).
 
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="your-key")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="ваш-ключ")
 with open("audio.mp3", "rb") as f:
     stream = client.audio.transcriptions.create(file=f, model="v3_ctc", stream=True)
     for event in stream:
@@ -176,202 +178,229 @@ with open("audio.mp3", "rb") as f:
 
 ### `GET /v1/models`
 
-A list from `ALLOWED_MODELS` in OpenAI format:
+Список из `ALLOWED_MODELS` в формате OpenAI:
 `{"object":"list","data":[{"id":"v3_ctc","object":"model","owned_by":"gigaam"}, ...]}`.
 
 ### `GET /health`
 
-`{"status":"ok","model":"<MODEL>","device":"<cpu|mps|cuda>","loaded":true}`. Used as the
-Docker `HEALTHCHECK`.
+`{"status":"ok","model":"<MODEL>","device":"<cpu|mps|cuda>","loaded":true}`. Если модель выгружена по
+простою, `loaded=false` — это нормально, healthcheck проверяет только код ответа `200`. Используется
+как Docker `HEALTHCHECK`.
 
-### Errors
+### Ошибки
 
-OpenAI format `{"error":{message,type,param,code}}`. Codes:
+OpenAI-формат `{"error":{message,type,param,code}}`. Коды:
 
-| Code | When |
+| Код | Когда |
 |---|---|
-| `400` | Corrupted/unsupported file, duration limit exceeded (`MAX_AUDIO_SECONDS`), invalid parameters. |
-| `401` | Missing/invalid Bearer key. |
-| `413` | `MAX_UPLOAD_MB` exceeded. |
-| `500` | Internal error / ffmpeg not available in PATH. |
-| `503` | Inference queue is full (`MAX_QUEUE`). |
+| `400` | Битый/неподдерживаемый файл, превышен лимит длительности (`MAX_AUDIO_SECONDS`), неверные параметры. |
+| `401` | Нет/неверный Bearer-ключ. |
+| `413` | Превышен `MAX_UPLOAD_MB`. |
+| `500` | Внутренняя ошибка / ffmpeg недоступен в PATH. |
+| `503` | Очередь инференса переполнена (`MAX_QUEUE`). |
 
-### Concurrency and cancellation
+### Конкурентность и отмена
 
-Inference is serialized (`Runner`, a single worker); requests beyond `MAX_QUEUE` → `503`. When a client
-disconnects during long audio, inference is cooperatively interrupted between batches (the short path
-≤25s is not cancelled).
-
-### Models (reference)
-
-The service loads **one** model (`MODEL` in `.env`); the `model` field in requests is validated against
-`ALLOWED_MODELS` (the loaded model is actually used).
-
-**Recommended — generation v3 ASR** (newest, best quality):
-
-| Model | Decoder | Case/punctuation | When to choose |
-|---|---|---|---|
-| `v3_ctc` (default) | CTC | lowercase, no punctuation | faster on CPU — the default choice for CPU hosts |
-| `v3_e2e_ctc` | CTC | punctuation + case normalization | when you need readability (punctuation, case) at CTC speed |
-| `v3_rnnt` | RNN-T | lowercase, no punctuation | higher accuracy, slower on CPU |
-| `v3_e2e_rnnt` | RNN-T | punctuation + case normalization | maximum quality + punctuation, slowest of all |
-
-- **CTC vs RNN-T:** CTC is faster on CPU (recommended on modest CPUs, e.g. ~4 cores); RNN-T is more accurate but slower.
-- **e2e** (only available in v3): adds punctuation and case normalization directly to the output; the plain
-  ones produce "raw" lowercase without punctuation.
-
-**Also downloaded by gigaam** (for switching `MODEL`): `v1_ctc`/`v1_rnnt`, `v2_ctc`/`v2_rnnt` — older
-ASR generations (e2e variants exist only in v3). The `*_ssl` (embedding encoders) and `emo` (emotion)
-models are **not supported** by the service — they are not transcription (they have no `model.transcribe`).
-
-**Switching the model:** set `MODEL=<name>` in `.env` (optionally add the name to `ALLOWED_MODELS` so the
-client can send it in the `model` field) and restart the container (`docker compose up -d`). The first
-request downloads the new weights into `./models` (volume); previously downloaded weights are kept —
-switching without re-downloading.
+Инференс сериализован (`Runner`, один воркер); сверх `MAX_QUEUE` запросов → `503`. При отключении
+клиента во время длинного аудио инференс кооперативно прерывается между батчами (короткий путь ≤25с
+не отменяется).
 
 ---
 
-## Configuration (`.env`)
+## Автовыгрузка модели по простою
 
-All settings are read from `.env` (`pydantic-settings`). Example — `.env.example`.
+Сервис рассчитан на постоянную работу в Docker. Чтобы не держать веса модели в памяти, когда она
+не нужна:
 
-| Variable | Type | Default | Purpose |
+- **Автовыгрузка:** если модель не использовалась дольше `IDLE_UNLOAD_SECONDS` секунд
+  (по умолчанию **300** = 5 минут), она выгружается из памяти. `IDLE_UNLOAD_SECONDS=0` выключает
+  автовыгрузку — модель всегда в памяти.
+- **Автозагрузка:** при следующем запросе модель загружается снова — веса берутся из кэша
+  `MODELS_DIR`, без сети. Загрузка занимает время (чтение ~1 ГБ с диска).
+- **Веб-панель управления:** на порту `UI_PORT` (по умолчанию `8001`) отдаётся HTML-страница,
+  где можно посмотреть состояние модели, изменить порог автовыгрузки или вручную загрузить/выгрузить
+  модель. Панель защищена тем же Bearer-ключом `API_KEY`, что и API (если он задан).
+- Выгрузка сериализована с инференсом через тот же единственный воркер — модель никогда
+  не выгружается посреди распознавания.
+
+---
+
+### Модели (справка)
+
+Сервис загружает **одну** модель (`MODEL` в `.env`); поле `model` в запросах валидируется по
+`ALLOWED_MODELS` (фактически используется загруженная модель).
+
+**Рекомендуемые — ASR поколения v3** (новейшее, лучшее качество):
+
+| Модель | Декодер | Регистр/пунктуация | Когда брать |
 |---|---|---|---|
-| `MODEL` | str | `v3_ctc` | GigaAM model name (must be in `ALLOWED_MODELS`). |
+| `v3_ctc` (дефолт) | CTC | нижний регистр, без пунктуации | быстрее на CPU — выбор по умолчанию для CPU-хостов |
+| `v3_e2e_ctc` | CTC | пунктуация + нормализация регистра | нужна читаемость (знаки, регистр) при скорости CTC |
+| `v3_rnnt` | RNN-T | нижний регистр, без пунктуации | выше точность, медленнее на CPU |
+| `v3_e2e_rnnt` | RNN-T | пунктуация + нормализация регистра | максимум качества + пунктуация, медленнее всех |
+
+- **CTC vs RNN-T:** CTC быстрее на CPU (рекомендуется на слабых CPU, напр. ~4 ядра); RNN-T точнее, но медленнее.
+- **e2e** (есть только у v3): добавляют пунктуацию и нормализацию регистра прямо в вывод; обычные —
+  «сырой» нижний регистр без знаков.
+
+**Также скачиваются gigaam** (для смены `MODEL`): `v1_ctc`/`v1_rnnt`, `v2_ctc`/`v2_rnnt` — более старые
+поколения ASR (e2e-варианты есть только у v3). Модели `*_ssl` (энкодеры-эмбеддинги) и `emo` (эмоции)
+**сервис не поддерживает** — это не транскрипция (`model.transcribe` у них нет).
+
+**Смена модели:** задайте `MODEL=<имя>` в `.env` (по желанию добавьте имя в `ALLOWED_MODELS`, чтобы
+клиент мог слать его в поле `model`) и перезапустите контейнер (`docker compose up -d`). Первый запрос
+скачает новые веса в `./models` (volume); ранее скачанные сохраняются — переключение без перекачки.
+
+---
+
+## Конфигурация (`.env`)
+
+Все настройки читаются из `.env` (`pydantic-settings`). Пример — `.env.example`.
+
+| Переменная | Тип | Дефолт | Назначение |
+|---|---|---|---|
+| `MODEL` | str | `v3_ctc` | Имя модели GigaAM (входит в `ALLOWED_MODELS`). |
 | `DEVICE` | str | `auto` | `auto`\|`cpu`\|`mps`\|`cuda`. `auto`: cuda→mps→cpu. |
-| `API_KEY` | str | `""` | Bearer key. Empty → auth disabled (set it in production). |
-| `MODELS_DIR` | path | `/data/models` | Weights cache directory (volume). On Mac set a local path. |
-| `QUANTIZE_INT8` | bool | `false` | Dynamic int8 quantization (stage 07; ignored for now). |
-| `BATCH_SIZE` | int | `4` | Longform inference batch size. |
-| `NUM_THREADS` | int | `4` | `torch.set_num_threads` (keep ≤ the number of cores). |
-| `MAX_UPLOAD_MB` | int | `2048` | Upload size limit → `413`. |
-| `MAX_AUDIO_SECONDS` | int | `36000` | Duration limit (10h). `0` = no limit. |
-| `MAX_QUEUE` | int | `8` | Inference queue limit (queued + in flight) → `503`. |
-| `VAD_MIN_DURATION` | float | `15.0` | Chunking: min segment length, sec. |
-| `VAD_MAX_DURATION` | float | `22.0` | Chunking: target maximum, sec. |
-| `VAD_STRICT_LIMIT` | float | `30.0` | Chunking: hard maximum, sec. |
-| `VAD_NEW_CHUNK_THRESHOLD` | float | `0.2` | Chunking: new-chunk threshold, sec. |
-| `VAD_THRESHOLD` | float | `0.25` | Silero: speech probability threshold. Lower = fewer false pauses, more context per chunk, lower WER (best 0.2–0.3; do not go below 0.2). |
-| `HOST` | str | `0.0.0.0` | uvicorn host. |
-| `PORT` | int | `8000` | Port. |
+| `API_KEY` | str | `""` | Bearer-ключ. Пусто → auth выключен (в проде задайте). |
+| `MODELS_DIR` | path | `/data/models` | Каталог кэша весов (volume). На Mac укажите локальный путь. |
+| `IDLE_UNLOAD_SECONDS` | int | `300` | Простой в секундах, после которого модель выгружается из памяти. `0` — автовыгрузка выключена. |
+| `UI_ENABLED` | bool | `true` | Включить веб-панель управления на отдельном порту. |
+| `UI_HOST` | str | `0.0.0.0` | Хост веб-панели управления. |
+| `UI_PORT` | int | `8001` | Порт веб-панели управления. |
+| `QUANTIZE_INT8` | bool | `false` | Динамическая int8-квантизация (этап 07; пока игнорируется). |
+| `BATCH_SIZE` | int | `4` | Размер батча longform-инференса. |
+| `NUM_THREADS` | int | `4` | `torch.set_num_threads` (держите ≤ числу ядер). |
+| `MAX_UPLOAD_MB` | int | `2048` | Лимит размера загрузки → `413`. |
+| `MAX_AUDIO_SECONDS` | int | `36000` | Лимит длительности (10ч). `0` = без лимита. |
+| `MAX_QUEUE` | int | `8` | Лимит очереди инференса (в очереди + в работе) → `503`. |
+| `VAD_MIN_DURATION` | float | `15.0` | Чанкинг: мин. длина сегмента, сек. |
+| `VAD_MAX_DURATION` | float | `22.0` | Чанкинг: целевой максимум, сек. |
+| `VAD_STRICT_LIMIT` | float | `30.0` | Чанкинг: жёсткий максимум, сек. |
+| `VAD_NEW_CHUNK_THRESHOLD` | float | `0.2` | Чанкинг: порог нового чанка, сек. |
+| `VAD_THRESHOLD` | float | `0.25` | Silero: порог вероятности речи. Ниже = меньше ложных пауз, больше контекста на чанк, ниже WER (оптимум 0.2–0.3; не ниже 0.2). |
+| `HOST` | str | `0.0.0.0` | Хост uvicorn (основной API). |
+| `PORT` | int | `8000` | Порт (основной API). |
 | `LOG_LEVEL` | str | `INFO` | `DEBUG`\|`INFO`\|`WARNING`\|`ERROR`. |
-| `LOG_JSON` | bool | `false` | JSON log format (otherwise human-readable). |
-| `DEFAULT_RESPONSE_FORMAT` | str | `json` | Default response format. |
-| `ALLOWED_MODELS` | csv | `v3_ctc,v3_e2e_ctc,v3_rnnt,v3_e2e_rnnt` | Allowed values for the `model` field. |
+| `LOG_JSON` | bool | `false` | JSON-формат логов (иначе human-readable). |
+| `DEFAULT_RESPONSE_FORMAT` | str | `json` | Формат ответа по умолчанию. |
+| `ALLOWED_MODELS` | csv | `v3_ctc,v3_e2e_ctc,v3_rnnt,v3_e2e_rnnt` | Допустимые значения поля `model`. |
 
 ---
 
-## Deploy (Docker Compose)
+## Деплой (Docker Compose)
 
-The deployment target is any self-hosted Docker host — a Linux server, NAS, or mini-PC (**x86_64**,
-no GPU; minimum 2 cores / 2 GB RAM, recommended 4 cores / 4–8 GB). Deployment is via `docker-compose.yml`
-(not `make`), using the
-`docker compose` CLI (a container-management UI works too). The image is built natively on the host
-(amd64) or in advance on another machine.
+Цель деплоя — любой self-hosted Docker-хост: Linux-сервер, NAS или мини-ПК (**x86_64**, без GPU;
+минимум 2 ядра / 2 ГБ RAM, рекомендуется 4 ядра / 4–8 ГБ). Деплой — через `docker-compose.yml` (не `make`),
+командой `docker compose` (UI управления контейнерами тоже подойдёт). Образ собирается на самом хосте
+нативно (amd64) либо заранее на другой машине.
 
-> **The image is self-contained.** ffmpeg + ffprobe, Python, torch (CPU) and all dependencies are
-> bundled into the image — nothing extra needs to be installed on the host. The container only needs
-> internet access **on the first start** (downloading the GigaAM weights from the CDN into the volume);
-> after that it works offline from the cache.
+> **Образ самодостаточен.** ffmpeg + ffprobe, Python, torch (CPU) и все зависимости встроены в
+> образ — на хосте ничего доустанавливать не нужно. Извне контейнеру требуется только интернет
+> **на первом старте** (скачивание весов GigaAM с CDN в volume); далее работает офлайн из кэша.
 
-### Steps
+### Шаги
 
-1. **Files on the host.** Place into the project directory (e.g. `/opt/gigaam-api`): `Dockerfile`,
-   `docker-compose.yml`, `.dockerignore`, `pyproject.toml`, `uv.lock`, the `gigaam_api/` directory,
-   and `.env` (copy from `.env.example`, **set `API_KEY`**).
-2. **Weights directory and permissions.** Create a `models` subdirectory and make it owned by **UID 1000**
-   (the container runs as this non-root user, otherwise it cannot write the weights):
+1. **Файлы на хосте.** Положите в каталог проекта (напр. `/opt/gigaam-api`): `Dockerfile`,
+   `docker-compose.yml`, `.dockerignore`, `pyproject.toml`, `uv.lock`, каталог `gigaam_api/`, и `.env`
+   (скопируйте из `.env.example`, **задайте `API_KEY`**).
+2. **Каталог весов и права.** Создайте подкаталог `models` и сделайте его владельцем **UID 1000**
+   (под этим non-root пользователем работает контейнер, иначе нет прав записи весов):
    ```bash
    mkdir -p /opt/gigaam-api/models
    sudo chown -R 1000:1000 /opt/gigaam-api/models
    ```
-3. **Build and start:**
+3. **Сборка и запуск:**
    ```bash
    docker compose up -d --build
    ```
-   (On an x86_64 host the image is built natively, without emulation.)
-4. **The first start downloads the weights** of GigaAM into `./models` (minutes, depends on bandwidth).
-   The container will be in the "starting" status, the `healthcheck` has `start_period: 600s` to cover
-   the download → then "healthy".
-5. **Check:** `curl http://<host_ip>:8000/health` → `200` with `"loaded":true`.
+   (На x86_64-хосте образ собирается нативно, без эмуляции.)
+4. **Первый старт качает веса** GigaAM в `./models` (минуты, зависит от канала). Контейнер будет в
+   статусе «starting», `healthcheck` имеет `start_period: 600s` под скачивание → затем «healthy».
+5. **Проверка:** `curl http://<host_ip>:8000/health` → `200` с `"loaded":true`.
 
-### Volume and reinstall
+### Volume и переустановка
 
-`./models:/data/models` — the weights cache **survives** container recreation (no re-download).
-`.env` and `./models` live on the host, they are not baked into the image (the image is light, without weights).
+`./models:/data/models` — кэш весов **переживает** пересоздание контейнера (повторно не качается).
+`.env` и `./models` лежат на хосте, в образ не пекутся (образ лёгкий, без весов).
 
-### Pre-warming the weights (optional)
+### Предварительный прогрев весов (опционально)
 
-To make the production start instant, the weights can be downloaded in advance, without bringing the
-service up, with a one-off run of the `tools` profile:
+Чтобы боевой старт был мгновенным, веса можно скачать заранее, не поднимая сервис, — разовым
+запуском профиля `tools`:
 
 ```bash
 docker compose --profile tools run --rm download-weights
 ```
 
-(On a dev Mac the same — `make download-weights`.)
+(На dev-Mac то же — `make download-weights`.)
 
-### Resource limits
+### Лимиты ресурсов
 
-`docker-compose.yml` has commented-out `mem_limit`/`cpus` — tune them to the host hardware.
-Keep `NUM_THREADS` in `.env` ≤ the number of allocated cores.
+В `docker-compose.yml` есть закомментированные `mem_limit`/`cpus` — подберите под железо хоста.
+`NUM_THREADS` в `.env` держите ≤ числу выделенных ядер.
 
 ---
 
-## Performance and limitations
+## Производительность и ограничения
 
-- **CPU speed.** The service is **batch, not realtime**: the RTF (compute time / duration) on long
-  files can be ≥1 — 10h of audio takes hours to process. More cores help (recommended 4); on the
-  minimum 2 cores expect proportionally slower throughput. For long files use `stream=true`
-  (progress + timeout protection).
-- **Model.** On CPU the default is `v3_ctc` (faster). RNN-T is more accurate but noticeably slower.
-- **Memory.** 2 GB is enough for short audio; long files need more. The peak on a long file ≈ weights
-  (~1 GB) + int16 buffer (~1.15 GB/10h) + float on the VAD stage (~2.3 GB/10h), so multi-hour files
-  want ~4–8 GB. If memory runs out — reduce `BATCH_SIZE` or split the input into parts.
-- **`verbose_json`.** The fields `tokens`/`avg_logprob`/`no_speech_prob`/`temperature`/`seek` are
-  best-effort (`0.0`/`0`); `compression_ratio` is honest. GigaAM does not provide these metrics.
+- **Скорость CPU.** Сервис **батчевый, не realtime**: RTF (время счёта / длительность) на длинных
+  файлах может быть ≥1 — 10ч аудио считаются часами. Больше ядер — быстрее (рекомендуется 4); на
+  минимуме в 2 ядра пропускная способность пропорционально ниже. Для длинных файлов используйте
+  `stream=true` (прогресс + защита от таймаутов).
+- **Модель.** На CPU по умолчанию — `v3_ctc` (быстрее). RNN-T точнее, но заметно медленнее.
+- **Память.** 2 ГБ хватает для коротких аудио; длинным файлам нужно больше. Пик на длинном файле ≈
+  веса (~1 ГБ) + int16-буфер (~1.15 ГБ/10ч) + float на VAD-стадии (~2.3 ГБ/10ч) → многочасовым файлам
+  нужно ~4–8 ГБ. При нехватке памяти — уменьшите `BATCH_SIZE` или режьте вход на части.
+- **Автовыгрузка.** Выгруженная модель не расходует память (~1 ГБ освобождается), но при следующем
+  запросе загружается снова (чтение весов с диска, несколько секунд). Порог настраивается в
+  `IDLE_UNLOAD_SECONDS` или через веб-панель на порту `UI_PORT`.
+- **`verbose_json`.** Поля `tokens`/`avg_logprob`/`no_speech_prob`/`temperature`/`seek` — best-effort
+  (`0.0`/`0`); `compression_ratio` — честный. GigaAM этих метрик не выдаёт.
 
 ---
 
 ## Troubleshooting
 
-- **`ffmpeg`/`ffprobe` not found (`500`).** In Docker it is installed automatically; on native dev —
-  install ffmpeg on your system (`brew install ffmpeg`) and check `ffmpeg -version`.
-- **No permission to write weights to the volume (the container crashes at startup).** The host
-  `./models` must be owned by UID 1000: `sudo chown -R 1000:1000 ./models`.
-- **OOM on long files.** Reduce `BATCH_SIZE`, increase the container memory limit, or split the input
-  into parts. The memory peak is on the VAD stage of long audio.
-- **MPS errors on Mac.** `auto` on Mac resolves to `mps`; on errors set
-  `PYTORCH_ENABLE_MPS_FALLBACK=1` (there is a CPU fallback) or force `DEVICE=cpu`.
-- **Re-download the weights.** Delete the contents of `./models` (volume) — on the next start the
-  weights are downloaded again.
-- **Slow first start / `unhealthy`.** This is the weights download. Wait for it to finish (`start_period`
-  600s); for a slow connection use pre-warming (see above).
+- **`ffmpeg`/`ffprobe` не найден (`500`).** В Docker ставится автоматически; при нативном dev —
+  установите ffmpeg в систему (`brew install ffmpeg`) и проверьте `ffmpeg -version`.
+- **Нет прав записи весов в volume (контейнер падает на старте).** Хостовый `./models` должен
+  принадлежать UID 1000: `sudo chown -R 1000:1000 ./models`.
+- **OOM на длинных файлах.** Уменьшите `BATCH_SIZE`, увеличьте лимит памяти контейнера, либо режьте
+  вход на части. Пик памяти — на VAD-стадии длинного аудио.
+- **Ошибки MPS на Mac.** `auto` на Mac резолвится в `mps`; при ошибках установите
+  `PYTORCH_ENABLE_MPS_FALLBACK=1` (есть фоллбэк на CPU) или принудительно `DEVICE=cpu`.
+- **Перекачать веса.** Удалите содержимое `./models` (volume) — при следующем старте веса скачаются заново.
+- **Долгий первый старт / `unhealthy`.** Это скачивание весов. Дождитесь окончания (`start_period`
+  600с); для медленного канала используйте предварительный прогрев (см. выше).
+- **Модель не загружается при первом запросе после простоя.** Если модель выгружена (`loaded=false`
+  в `/health`), первый запрос загрузит её снова — это занимает несколько секунд (чтение весов из кэша).
+  Увеличьте `IDLE_UNLOAD_SECONDS` или выключите автовыгрузку (`0`), если задержка критична.
 
 ---
 
-## Commands (Makefile)
+## Команды (Makefile)
 
-A convenience for **development on Mac** (in production deployment goes without `make`, via `docker compose`).
+Удобство для **разработки на Mac** (в проде деплой идёт без `make`, через `docker compose`).
 
-| Target | Action |
+| Цель | Действие |
 |---|---|
-| `make install` | Install dependencies (`uv sync`). |
-| `make run` | Local run (uvicorn `--reload`). Variables `HOST`/`PORT`. |
-| `make download-weights-local` | Pre-warm the weights **natively** (uv, without Docker) into `MODELS_DIR` from `.env`. |
-| `make check` | `lint` + `format-check` + `typecheck` + `test` — the fast loop. |
-| `make pre-commit` | The whole batch of tests of all types in a row (after each task). |
-| `make test` / `make test-integration` | Unit / integration tests. |
-| `make build-docker` | Build the production image (`--platform linux/amd64`). |
+| `make install` | Установить зависимости (`uv sync`). |
+| `make run` | Локальный запуск сервиса + веб-панели (`python -m gigaam_api.serve`, порты `PORT` и `UI_PORT`). |
+| `make run-api` | Локальный запуск только API с автоперезагрузкой (`uvicorn --reload`). |
+| `make download-weights-local` | Прогрев весов **нативно** (uv, без Docker) в `MODELS_DIR` из `.env`. |
+| `make check` | `lint` + `format-check` + `typecheck` + `test` — быстрый цикл. |
+| `make pre-commit` | Вся пачка тестов всех типов подряд (после каждой задачи). |
+| `make test` / `make test-integration` | Юнит / интеграционные тесты. |
+| `make build-docker` | Сборка прод-образа (`--platform linux/amd64`). |
 | `make up` / `make down` / `make logs` | `docker compose up -d` / `down` / `logs -f`. |
-| `make download-weights` | Pre-warm the weights via **Docker** (one-off container, `tools` profile). |
-| `make clean` | Remove tool caches. |
+| `make download-weights` | Прогрев весов через **Docker** (разовый контейнер, профиль `tools`). |
+| `make clean` | Удалить кэши инструментов. |
 
 ---
 
-## Development
+## Разработка
 
-- The working language of the project is Russian; code/identifiers are English.
-- **TDD**, `mypy strict`, pragmatic testing (key/risky logic and the happy path).
-- After each task — a green `make pre-commit`.
-- Architecture and design decisions are documented in `CLAUDE.md` (project guide + ADR log).
+- Язык общения в проекте — русский; код/идентификаторы — английские.
+- **TDD**, `mypy strict`, тестируем прагматично (ключевая/рисковая логика и happy-path).
+- После каждой задачи — зелёный `make pre-commit`.
+- Архитектура и проектные решения задокументированы в `CLAUDE.md` (гайд по проекту + ADR-лог).

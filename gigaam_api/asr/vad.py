@@ -1,12 +1,11 @@
-"""Silero VAD + chunking algorithm for longform recognition.
+"""Silero VAD + алгоритм чанкинга для longform-распознавания.
 
-`merge_intervals_to_chunks` is a pure function, a verbatim port of the merge logic from
-gigaam/vad_utils.py::segment_audio_file (_update_segments + loop). We only change the
-source of speech intervals: pyannote → Silero.
+`merge_intervals_to_chunks` — чистая функция, дословный порт логики merge из
+gigaam/vad_utils.py::segment_audio_file (_update_segments + цикл). Меняется только
+источник speech-интервалов: pyannote → Silero.
 
-silero/torch imports are lazy (inside functions) so that importing the module just for the
-pure chunking function does not pull in the heavy stack. Silero weights are bundled in the
-package (no network).
+Импорты silero/torch — ленивые (внутри функций), чтобы импорт модуля только ради
+чистой функции чанкинга не тянул тяжёлый стек. Веса Silero встроены в пакет (без сети).
 """
 
 from __future__ import annotations
@@ -21,18 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 def load_vad() -> object:
-    """Load Silero VAD once (JIT from the package bundle; no network/cache needed).
+    """Загрузить Silero VAD один раз (JIT из пакета; без сети/кэша).
 
-    We return an opaque handle (passed to `speech_intervals`); the JIT stack is
-    the same as GigaAM's (torch) — without onnxruntime, so as not to spawn thread pools
-    on weak CPUs (e.g. ~4 cores; see the ADR in CLAUDE.md).
+    Возвращаем непрозрачный handle (передаём в `speech_intervals`); JIT-стек —
+    тот же, что у GigaAM (torch) — без onnxruntime, чтобы не плодить пулы потоков
+    на слабых CPU (напр. ~4 ядра; см. ADR в CLAUDE.md).
 
-    Root cause guard: silero_vad runs `torch.set_num_threads(1)` at import time
-    (silero_vad/model.py, module level — it fires on the first import in the process). We
-    capture the thread count BEFORE importing silero and restore it after, so loading the VAD
-    has no global side effect — otherwise it silently pins ALL downstream inference to a single
-    thread (NUM_THREADS ignored, ~3x slower on a 4-core CPU box). The save MUST precede the
-    import: capturing it afterwards would already read the clobbered 1.
+    Защита причины: silero_vad вызывает `torch.set_num_threads(1)` при импорте
+    (silero_vad/model.py, уровень модуля — срабатывает при первом импорте в процессе).
+    Мы сохраняем число потоков ДО импорта silero и восстанавливаем после — чтобы загрузка
+    VAD не имела глобального побочного эффекта; иначе это молча прибивает ВЕСЬ инференс
+    к одному потоку (NUM_THREADS игнорируется, ~3x медленнее на 4-ядерном CPU).
+    Сохранение ДОЛЖНО идти до импорта: перехват после прочитал бы уже испорченную 1.
     """
     import torch
 
@@ -48,10 +47,10 @@ def load_vad() -> object:
 def speech_intervals(
     wav: Tensor, model: object, *, threshold: float, sampling_rate: int = 16000
 ) -> list[tuple[float, float]]:
-    """Return speech intervals `(start, end)` in seconds via Silero.
+    """Вернуть речевые интервалы `(start, end)` в секундах через Silero.
 
-    `wav` is float32 mono 16kHz (the whole signal; memory peak at this stage).
-    The format is identical to pyannote: a list of `(start, end)` seconds.
+    `wav` — float32 моно 16кГц (весь сигнал; пик памяти на этой стадии).
+    Формат идентичен pyannote: список `(start, end)` в секундах.
     """
     from silero_vad import get_speech_timestamps
 
@@ -74,11 +73,11 @@ def merge_intervals_to_chunks(
     strict_limit: float,
     new_chunk_threshold: float,
 ) -> list[tuple[float, float]]:
-    """Merge speech intervals into chunks and return their boundaries (seconds).
+    """Слить речевые интервалы в чанки и вернуть их границы (в секундах).
 
-    A port of `segment_audio_file` without waveform slicing: a pure function of the intervals and
-    parameters (the engine does the slicing). Chunks longer than `strict_limit`
-    are cut into equal parts (`int(d/strict_limit)+1`), as in upstream.
+    Порт `segment_audio_file` без нарезки сигнала: чистая функция от интервалов и
+    параметров (движок делает нарезку сам). Чанки длиннее `strict_limit`
+    режутся на равные части (`int(d/strict_limit)+1`), как в upstream.
     """
     boundaries: list[tuple[float, float]] = []
     curr_duration = 0.0

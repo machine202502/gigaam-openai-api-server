@@ -1,16 +1,16 @@
-"""Assembly of SSE events for `stream=true`.
+"""Сборка SSE-событий для `stream=true`.
 
-Contract (verified against OpenAI Speech-to-text, 06.2026):
-- per segment → `{"type":"transcript.text.delta","delta":"<text>"}`;
-- at the end → `{"type":"transcript.text.done","text":"<full text>"}` → `data: [DONE]`;
-- error in the source → `{"type":"error","error":{...}}` and close (no `[DONE]`).
+Контракт (сверен с OpenAI Speech-to-text, 06.2026):
+- на каждый сегмент → `{"type":"transcript.text.delta","delta":"<текст>"}`;
+- в конце → `{"type":"transcript.text.done","text":"<полный текст>"}` → `data: [DONE]`;
+- ошибка в источнике → `{"type":"error","error":{...}}` и закрытие (без `[DONE]`).
 
-Invariant (as in OpenAI): the concatenation of all `delta` == `done.text` == the synchronous
-response. The separator "moves" to the start of the next delta (the first one has no leading space),
-so `"".join(delta) == " ".join(segment texts)`.
+Инвариант (как в OpenAI): конкатенация всех `delta` == `done.text` == синхронный ответ.
+Разделитель-пробел «уезжает» в начало следующего delta (у первого нет ведущего пробела),
+так что `"".join(delta) == " ".join(тексты сегментов)`.
 
-Here — only event rendering (a pure async generator over an async iterator of segments).
-The "blocking engine generator → async" bridge + heartbeat live in `stream_segments` (see below).
+Здесь — только рендеринг событий (чистый async-генератор над async-итератором сегментов).
+Мост «блокирующий генератор движка → async» + heartbeat живут в `stream_segments` (см. ниже).
 """
 
 import asyncio
@@ -24,37 +24,35 @@ from gigaam_api.runner import Runner
 
 logger = logging.getLogger(__name__)
 
-# Heartbeat interval: on a slow CPU a single batch takes minutes without events —
-# a periodic SSE comment keeps the connection alive against proxy idle timeouts.
+# Интервал heartbeat: на медленном CPU один батч считается минутами без событий —
+# периодический SSE-комментарий держит соединение против idle-таймаутов прокси.
 STREAM_HEARTBEAT_SECONDS = 15.0
 
-_HEARTBEAT_COMMENT = (
-    ": keep-alive\n\n"  # SSE comment: ignored by clients, keeps the connection alive
-)
+_HEARTBEAT_COMMENT = ": keep-alive\n\n"  # SSE-комментарий: клиенты игнорируют, держит соединение
 
 
 class _Heartbeat:
-    """Marker for "no events yet" — rendered into an SSE comment against proxy idle timeouts."""
+    """Маркер «событий пока нет» — рендерится в SSE-комментарий против idle-таймаутов прокси."""
 
 
 HEARTBEAT = _Heartbeat()
 
-# Stream item: either a ready segment or a heartbeat marker (when there are no events yet).
+# Элемент потока: либо готовый сегмент, либо маркер heartbeat (когда событий ещё нет).
 StreamItem = SegmentTS | _Heartbeat
 
 
 def format_sse(data: dict[str, object] | str) -> str:
-    """Assemble a single SSE frame `data: <payload>\\n\\n`.
+    """Собрать один SSE-фрейм `data: <payload>\\n\\n`.
 
-    `str` is returned as is (the `[DONE]` terminator); `dict` is serialized to compact
-    JSON preserving Cyrillic (`ensure_ascii=False`).
+    `str` возвращается как есть (терминатор `[DONE]`); `dict` сериализуется в компактный
+    JSON с сохранением кириллицы (`ensure_ascii=False`).
     """
     payload = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
     return f"data: {payload}\n\n"
 
 
 def _error_event(exc: Exception) -> dict[str, object]:
-    """OpenAI-format error event for an error in the middle of the stream."""
+    """OpenAI-формат события ошибки в середине потока."""
     return {
         "type": "error",
         "error": {"message": str(exc), "type": "api_error", "param": None, "code": None},
@@ -64,10 +62,10 @@ def _error_event(exc: Exception) -> dict[str, object]:
 async def sse_transcription(
     items: AsyncIterator[StreamItem], *, request_id: str
 ) -> AsyncIterator[str]:
-    """Render a stream of segments/heartbeats into SSE frames.
+    """Рендеринг потока сегментов/heartbeat в SSE-фреймы.
 
-    `CancelledError`/`GeneratorExit` (the client disconnected) are intentionally NOT caught —
-    we hand cleanup upward; we catch only genuine source errors → an error event.
+    `CancelledError`/`GeneratorExit` (клиент отключился) НЕ ловятся намеренно —
+    передаём очистку наверх; ловим только настоящие ошибки источника → событие error.
     """
     parts: list[str] = []
     try:
@@ -93,7 +91,7 @@ async def sse_transcription(
 
 
 class _Done:
-    """Internal queue marker: the producer has exhausted the segments."""
+    """Внутренний маркер очереди: продюсер исчерпал сегменты."""
 
 
 _DONE = _Done()
@@ -108,21 +106,21 @@ async def stream_segments(
     cancel: threading.Event,
     on_done: Callable[[], None],
 ) -> AsyncGenerator[StreamItem, None]:
-    """Bridge: a blocking segment generator (in the Runner worker) → an async iterator.
+    """Мост: блокирующий генератор сегментов (в воркере Runner) → async-итератор.
 
-    Inference serialization is preserved — the producer goes into the same single worker
-    (`runner.submit`), not into a temporary thread. Between the thread and the event loop — an
-    `asyncio.Queue` (filled via `call_soon_threadsafe`); if no segment arrived within
-    `heartbeat_interval`, we yield `HEARTBEAT` (rendered into an SSE comment against proxy
-    idle timeouts).
+    Сериализация инференса сохраняется — продюсер попадает в тот же единственный воркер
+    (`runner.submit`), а не во временный поток. Между потоком и циклом событий —
+    `asyncio.Queue` (наполняется через `call_soon_threadsafe`); если сегмент не пришёл
+    за `heartbeat_interval`, отдаём `HEARTBEAT` (рендерится в SSE-комментарий против
+    idle-таймаутов прокси).
 
-    Lifecycle:
-    - `on_done` (release the slot + delete the temp file) is called when the producer has ACTUALLY
-      finished (the worker is free) — via the future's done-callback, not when the consumer
-      finished reading;
-    - `cancel` is set in `finally` (the consumer left/was cancelled) → `iter_segments` will stop
-      between batches;
-    - a producer error is propagated to the consumer (→ `sse_transcription` emits an error event).
+    Жизненный цикл:
+    - `on_done` (освободить слот + удалить временный файл) вызывается, когда продюсер
+      РЕАЛЬНО закончил (воркер свободен) — через done-callback фьючера, а не когда
+      потребитель закончил читать;
+    - `cancel` выставляется в `finally` (потребитель ушёл/отменён) → `iter_segments`
+      остановится между батчами;
+    - ошибка продюсера передаётся потребителю (→ `sse_transcription` выдаёт событие error).
     """
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[SegmentTS | _Done | Exception] = asyncio.Queue()
@@ -132,12 +130,12 @@ async def stream_segments(
             for segment in make_iter():
                 loop.call_soon_threadsafe(queue.put_nowait, segment)
             loop.call_soon_threadsafe(queue.put_nowait, _DONE)
-        # any inference error → to the consumer, the thread doesn't fail silently
+        # любая ошибка инференса → потребителю, поток не умирает молча
         except Exception as exc:
             loop.call_soon_threadsafe(queue.put_nowait, exc)
 
     future = runner.submit(produce)
-    future.add_done_callback(lambda _f: on_done())  # worker is free → release + cleanup
+    future.add_done_callback(lambda _f: on_done())  # воркер свободен → освободить слот + очистка
     logger.info("request_id=%s stream started", request_id)
     try:
         while True:

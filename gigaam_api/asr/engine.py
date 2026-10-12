@@ -1,7 +1,7 @@
-"""ASR engine contract: result types, Protocol and engine-level exceptions.
+"""Контракт ASR-движка: типы результатов, Protocol и исключения уровня движка.
 
-The types deliberately do not depend on gigaam — the HTTP and format layers import them
-without knowing about the concrete inference backend.
+Типы намеренно не зависят от gigaam — HTTP- и форматный слои импортируют их,
+не зная о конкретном инференс-бэкенде.
 """
 
 from collections.abc import Callable, Iterator
@@ -10,7 +10,7 @@ from typing import Protocol, TypedDict, runtime_checkable
 
 
 class EngineInfo(TypedDict):
-    """Engine state snapshot for GET /health."""
+    """Снимок состояния движка для GET /health."""
 
     model: str
     device: str
@@ -19,7 +19,7 @@ class EngineInfo(TypedDict):
 
 @dataclass(frozen=True)
 class WordTS:
-    """A word with timestamps (seconds from the start of the audio)."""
+    """Слово с таймстемпами (секунды от начала аудио)."""
 
     text: str
     start: float
@@ -28,7 +28,7 @@ class WordTS:
 
 @dataclass(frozen=True)
 class SegmentTS:
-    """A transcript segment; `words` is populated at word-level granularity."""
+    """Сегмент транскрипта; `words` заполняется при word-уровневой гранулярности."""
 
     text: str
     start: float
@@ -38,9 +38,9 @@ class SegmentTS:
 
 @dataclass(frozen=True)
 class ASRResult:
-    """Recognition result: the full text, duration and segments.
+    """Результат распознавания: полный текст, длительность и сегменты.
 
-    For short audio (≤25s) `segments` is a single segment `[0, duration]`.
+    Для короткого аудио (≤25с) `segments` — один сегмент `[0, duration]`.
     """
 
     text: str
@@ -49,23 +49,23 @@ class ASRResult:
 
 
 class AudioTooLongError(Exception):
-    """Audio is longer than the MAX_AUDIO_SECONDS limit.
+    """Аудио длиннее лимита MAX_AUDIO_SECONDS.
 
-    The 25s longform threshold is handled inside the engine.
+    Порог longform 25с обрабатывается внутри движка.
     """
 
 
 class InferenceCancelledError(Exception):
-    """Inference aborted on request (the client disconnected between longform batches)."""
+    """Инференс прерван по запросу (клиент отключился между longform-батчами)."""
 
 
 @runtime_checkable
 class ASREngine(Protocol):
-    """Inference contract; knows nothing about HTTP.
+    """Контракт инференса; ничего не знает о HTTP.
 
-    The implementation (`GigaAMEngine`) holds the loaded model and is serialized externally
-    (stage 04). The longform method is added by stage 03. `runtime_checkable` is needed so that
-    /health can narrow the type of `app.state.engine` via isinstance without importing gigaam.
+    Реализация (`GigaAMEngine`) держит загруженную модель и сериализуется снаружи.
+    `runtime_checkable` нужен, чтобы /health мог сузить тип `app.state.engine` через
+    isinstance без импорта gigaam.
     """
 
     model_name: str

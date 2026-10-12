@@ -1,8 +1,8 @@
-"""Pure functions that render ASRResult into OpenAI formats. They know nothing about HTTP/model.
+"""Чистые функции — рендерят ASRResult в форматы OpenAI. Ничего не знают об HTTP/модели.
 
-verbose_json fields not available from GigaAM are filled best-effort:
+Поля verbose_json, недоступные из GigaAM, заполняются best-effort:
 tokens=[], temperature/avg_logprob/no_speech_prob=0.0, seek=0; compression_ratio
-is computed honestly (cheap). Time format: SRT — comma, VTT — dot.
+считается честно (дёшево). Формат времени: SRT — запятая, VTT — точка.
 """
 
 import zlib
@@ -16,20 +16,20 @@ _LANGUAGE = "russian"
 
 
 def to_json(result: ASRResult) -> dict[str, str]:
-    """Render into the `response_format=json` format (text only)."""
+    """Рендер в формат `response_format=json` (только текст)."""
     return {"text": result.text}
 
 
 def to_text(result: ASRResult) -> str:
-    """Render into the `response_format=text` format (plain text)."""
+    """Рендер в формат `response_format=text` (простой текст)."""
     return result.text
 
 
 def _compression_ratio(text: str) -> float:
-    """len(bytes)/len(zlib.compress(bytes)) — as in Whisper (bytes on both sides).
+    """len(bytes)/len(zlib.compress(bytes)) — как в Whisper (байты с обеих сторон).
 
-    Empty text → 0.0 (no questionable division). For short segments the value may
-    be <1.0 (the zlib header is longer than the input) — this is correct and matches Whisper.
+    Пустой текст → 0.0 (никакого сомнительного деления). Для коротких сегментов значение
+    может быть <1.0 (заголовок zlib длиннее входа) — это верно и совпадает с Whisper.
     """
     if not text:
         return 0.0
@@ -38,13 +38,13 @@ def _compression_ratio(text: str) -> float:
 
 
 def to_verbose_json(result: ASRResult, *, granularities: set[str]) -> dict[str, Any]:
-    """Render into the `response_format=verbose_json` format.
+    """Рендер в формат `response_format=verbose_json`.
 
-    `granularities` controls the presence of the `segments` and `words` keys:
-    - {"segment"} — segments only
-    - {"word"} — words only
-    - {"segment", "word"} — both keys
-    Missing keys are excluded via `exclude_none=True`.
+    `granularities` управляет наличием ключей `segments` и `words`:
+    - {"segment"} — только segments
+    - {"word"} — только words
+    - {"segment", "word"} — оба ключа
+    Отсутствующие ключи исключаются через `exclude_none=True`.
     """
     segments = None
     if "segment" in granularities:
@@ -82,7 +82,7 @@ def to_verbose_json(result: ASRResult, *, granularities: set[str]) -> dict[str, 
 
 
 def _format_ts(seconds: float, *, sep: str) -> str:
-    """Seconds → `HH:MM:SS{sep}mmm` (sep=',' for SRT, '.' for VTT). Negative → 0."""
+    """Секунды → `HH:MM:SS{sep}mmm` (sep=',' для SRT, '.' для VTT). Отрицательное → 0."""
     millis_total: int = round(max(0.0, seconds) * 1000.0)
     hours, millis_total = divmod(millis_total, 3_600_000)
     minutes, millis_total = divmod(millis_total, 60_000)
@@ -91,7 +91,7 @@ def _format_ts(seconds: float, *, sep: str) -> str:
 
 
 def to_srt(result: ASRResult) -> str:
-    """Render into the `response_format=srt` format (SubRip Subtitle)."""
+    """Рендер в формат `response_format=srt` (SubRip Subtitle)."""
     out = ""
     for index, seg in enumerate(result.segments, start=1):
         start = _format_ts(seg.start, sep=",")
@@ -101,9 +101,9 @@ def to_srt(result: ASRResult) -> str:
 
 
 def to_vtt(result: ASRResult) -> str:
-    """Render into the `response_format=vtt` format (WebVTT).
+    """Рендер в формат `response_format=vtt` (WebVTT).
 
-    The WEBVTT header is always present.
+    Заголовок WEBVTT присутствует всегда.
     """
     out = "WEBVTT\n\n"
     for seg in result.segments:

@@ -1,11 +1,11 @@
-"""Audio handling: duration probe (ffprobe) and decode to int16 16k mono (ffmpeg).
+"""Работа со звуком: probe длительности (ffprobe) и декодирование в int16 16кГц моно (ffmpeg).
 
-The short recognition path delegates decoding to gigaam itself (`model.transcribe`
-calls ffmpeg internally, see gigaam/preprocess.py::load_audio). The longform path
-decodes on its own via `decode_to_int16_16k_mono` (int16 saves memory on long files).
+Короткий путь распознавания делегирует декодирование самому gigaam (`model.transcribe`
+внутри вызывает ffmpeg, см. gigaam/preprocess.py::load_audio). Longform-путь декодирует
+сам через `decode_to_int16_16k_mono` (int16 экономит память на длинных файлах).
 
-torch is imported **lazily** inside `decode_to_int16_16k_mono`: the module stays
-torch-free so that importing audio.py from the HTTP layer does not pull in torch.
+torch импортируется **лениво** внутри `decode_to_int16_16k_mono`: модуль остаётся
+torch-free, чтобы импорт audio.py из HTTP-слоя не тянул torch.
 """
 
 from __future__ import annotations
@@ -22,19 +22,19 @@ logger = logging.getLogger(__name__)
 
 
 class AudioDecodeError(Exception):
-    """Failed to read/decode audio (broken/unsupported file)."""
+    """Не удалось прочитать/декодировать аудио (битый/неподдерживаемый файл)."""
 
 
 class AudioToolNotFoundError(Exception):
-    """ffprobe/ffmpeg not found in PATH — a server-side environment problem (→ 500)."""
+    """ffprobe/ffmpeg не найдены в PATH — проблема окружения на сервере (→ 500)."""
 
 
 def probe_duration(path: str) -> float:
-    """Return the audio duration in seconds via `ffprobe`.
+    """Вернуть длительность аудио в секундах через `ffprobe`.
 
-    ffprobe reliably determines the duration for any format supported by
-    ffmpeg. Any failure (missing file, broken input, unknown duration) →
-    AudioDecodeError, so that raw subprocess errors are not propagated.
+    ffprobe надёжно определяет длительность для любого формата, поддерживаемого
+    ffmpeg. Любая ошибка (нет файла, битый вход, неизвестная длительность) →
+    AudioDecodeError, чтобы наружу не летели сырые ошибки subprocess.
     """
     cmd = [
         "ffprobe",
@@ -65,12 +65,12 @@ def probe_duration(path: str) -> float:
 
 
 def decode_to_int16_16k_mono(path: str) -> Tensor:
-    """Decode audio into a 1-D **int16** torch.Tensor (16kHz mono) via ffmpeg.
+    """Декодировать аудио в 1-D **int16** torch.Tensor (16кГц моно) через ffmpeg.
 
-    Like gigaam `load_audio`, but we return int16 (not float): on long files this
-    halves memory usage (~1.15 GB/10h versus 2.3 GB in float). We convert to float
-    chunk-by-chunk during batching. The tensor is read-only (shares memory with the
-    ffmpeg buffer) — inference makes copies (`.float()`), the buffer itself is not mutated.
+    Как gigaam `load_audio`, но возвращаем int16 (не float): на длинных файлах это
+    вдвое снижает потребление памяти (~1.15 ГБ/10ч против 2.3 ГБ во float). Во float
+    переводим по чанкам при батчинге. Тензор только для чтения (делит память с буфером
+    ffmpeg) — инференс делает копии (`.float()`), сам буфер не мутируется.
     """
     import torch
 
@@ -100,7 +100,7 @@ def decode_to_int16_16k_mono(path: str) -> Tensor:
         raise AudioDecodeError(f"failed to decode audio: {path}") from exc
 
     with warnings.catch_warnings():
-        # torch.frombuffer on bytes yields a read-only tensor → UserWarning, as in gigaam.
+        # torch.frombuffer на bytes даёт read-only тензор → UserWarning, как в gigaam.
         warnings.simplefilter("ignore", category=UserWarning)
         wav: Tensor = torch.frombuffer(raw, dtype=torch.int16)
 

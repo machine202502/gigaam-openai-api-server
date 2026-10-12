@@ -1,8 +1,8 @@
-"""Integration: GigaAMEngine on the real v3_ctc model (integration marker).
+"""Интеграция: GigaAMEngine на реальной модели v3_ctc (маркер integration).
 
-Downloads the real weights into a tmp cache and recognizes a short Russian sample (~11s).
-DEVICE=cpu — determinism and parity with prod CPU. Graceful skip if there is no
-network/weights (CDN unavailable) — then make pre-commit stays green offline.
+Скачивает реальные веса во временный кэш и распознаёт короткий русский образец (~11с).
+DEVICE=cpu — детерминизм и соответствие продакшн-CPU. Мягкий пропуск, если нет
+сети/весов (CDN недоступен) — тогда make pre-commit остаётся зелёным офлайн.
 """
 
 from pathlib import Path
@@ -26,7 +26,7 @@ def engine(tmp_path_factory: pytest.TempPathFactory) -> GigaAMEngine:
     settings = Settings(MODEL="v3_ctc", DEVICE="cpu", MODELS_DIR=cache)
     try:
         return GigaAMEngine(settings)
-    except Exception as exc:  # no network / CDN unavailable / weights failed to download
+    except Exception as exc:  # нет сети / CDN недоступен / веса не скачались
         pytest.skip(f"model unavailable (no network/weights): {exc}")
 
 

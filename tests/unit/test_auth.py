@@ -1,4 +1,4 @@
-"""Bearer-auth tests: empty key → open; set → 401 without/with wrong, 200 with correct."""
+"""Тесты Bearer-аутентификации: пустой ключ → открыто; задан → 401 без/с неверным, 200 с верным."""
 
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient

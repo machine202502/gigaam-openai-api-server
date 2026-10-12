@@ -1,4 +1,4 @@
-"""Tests of the OpenAI error format: each exception → the right code and body."""
+"""Тесты формата ошибок OpenAI: каждое исключение → правильный код и тело."""
 
 import pytest
 from fastapi import FastAPI
@@ -50,7 +50,7 @@ def test_auth_error_sets_invalid_api_key_code() -> None:
 
 
 def test_unexpected_exception_maps_to_500_api_error() -> None:
-    # Catch-all for unexpected errors (ffmpeg crash, etc.) — the flag below is needed.
+    # Catch-all для неожиданных ошибок (сбой ffmpeg и т.п.) — для этого нужен флаг ниже.
     client = TestClient(_app_raising(RuntimeError("kaboom")), raise_server_exceptions=False)
     resp = client.get("/boom")
     assert resp.status_code == 500
@@ -69,7 +69,7 @@ def test_request_validation_maps_to_400() -> None:
     def need(n: Annotated[int, Query()]) -> dict[str, int]:
         return {"n": n}
 
-    resp = TestClient(app).get("/need")  # the required query param is missing
+    resp = TestClient(app).get("/need")  # обязательный query-параметр отсутствует
     assert resp.status_code == 400
     assert resp.json()["error"]["type"] == "invalid_request_error"
     assert resp.json()["error"]["param"] == "n"

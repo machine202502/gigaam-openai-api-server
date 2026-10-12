@@ -1,7 +1,7 @@
 [project]
 name = "gigaam-api"
 version = "0.3.0"
-description = "OpenAI-compatible Russian-speech recognition service built on GigaAM"
+description = "OpenAI-совместимый сервис распознавания русской речи на базе GigaAM"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115",
@@ -14,6 +14,9 @@ dependencies = [
     "silero-vad>=6.2.1",
     "gigaam",
 ]
+
+[project.scripts]
+gigaam-api = "gigaam_api.serve:main"
 
 [dependency-groups]
 dev = [
@@ -37,11 +40,17 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-# Project convention: comments, docstrings, and developer-facing strings are in English.
-# RUF001/002/003 (ambiguous-unicode) are enforced to catch accidental Cyrillic look-alikes.
+# Язык проекта — русский: комментарии, docstring и пользовательские строки на кириллице.
+# RUF001/002/003 (ambiguous-unicode) отключены — они ищут символы-двойники ASCII в кириллице.
+# Остальные правила RUF (например, RUF100 — неиспользуемый noqa) остаются включёнными.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+# HTML/JS-разметка панели управления — длинные строки разметки не ограничиваем.
+"gigaam_api/admin.py" = ["E501"]
 
 [tool.ruff.format]
-# Default ruff formatter settings.
+# Настройки форматтера ruff по умолчанию.
 
 [tool.mypy]
 python_version = "3.12"
@@ -50,36 +59,36 @@ warn_unused_ignores = true
 disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
-# gigaam (a git dependency) and silero-vad ship no type stubs / py.typed.
-# A targeted ignore_missing_imports is more idiomatic than a broad `# type: ignore`.
+# gigaam (git-зависимость) и silero-vad не поставляют стабы / py.typed.
+# Точечный ignore_missing_imports идиоматичнее широкого `# type: ignore`.
 [[tool.mypy.overrides]]
 module = ["gigaam.*", "silero_vad.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: requires a real model and/or network"]
+markers = ["integration: требует реальную модель и/или сеть"]
 addopts = "-q --strict-markers"
 
 [tool.uv]
-# onnx is pulled in transitively by gigaam, which hard-pins onnx==1.19.* in its own
-# metadata. That old onnx has open high/medium GHSA advisories (all fixed in 1.21.0), and
-# Dependabot security updates cannot bump it (the pin makes the resolution unsatisfiable →
-# the Dependabot job fails on every run). We override the version here: gigaam never does a
-# bare `import onnx` (only onnxruntime + torch.onnx.export), and this service never calls
-# ONNX export, so forcing a newer onnx is safe. See the ADR log in CLAUDE.md.
+# onnx тянется транзитивно через gigaam, который жёстко пинит onnx==1.19.* в своих метаданных.
+# У старого onnx открыты high/medium GHSA-уязвимости (все исправлены в 1.21.0), а Dependabot
+# security-обновления не могут его поднять (пин делает резолв неразрешимым → job падает каждый
+# запуск). Мы переопределяем версию здесь: gigaam не делает «голый» `import onnx` (только
+# onnxruntime + torch.onnx.export), а этот сервис ONNX-экспорт не вызывает, поэтому форс новой
+# onnx безопасен. См. ADR-лог в CLAUDE.md.
 override-dependencies = ["onnx>=1.21.0"]
 
 [tool.uv.sources]
 gigaam = { git = "https://github.com/salute-developers/GigaAM.git", rev = "559d88d6b72541412743929f633a6ae7c9950b85" }
-# torch/torchaudio: on Linux (Docker) — CPU wheels from the PyTorch index (no CUDA);
-# on macOS (dev) — default PyPI wheels (with MPS). A single uv.lock covers both platforms
-# via the platform marker. See the ADR log in CLAUDE.md.
+# torch/torchaudio: на Linux (Docker) — CPU-колёса из индекса PyTorch (без CUDA);
+# на macOS (dev) — обычные колёса PyPI (с MPS). Единый uv.lock покрывает обе платформы
+# через маркер платформы. См. ADR-лог в CLAUDE.md.
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
-# explicit = true → the index is used ONLY for torch/torchaudio (via the sources above);
-# all other packages (onnxruntime etc. pulled by gigaam) come from regular PyPI.
+# explicit = true → индекс используется ТОЛЬКО для torch/torchaudio (через sources выше);
+# все остальные пакеты (onnxruntime и пр. из gigaam) берутся с обычного PyPI.
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"

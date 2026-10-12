@@ -1,8 +1,8 @@
-"""Integration: SSE stream on the real v3_ctc model + a long sample (~40s).
+"""Интеграция: SSE-поток на реальной модели v3_ctc + длинный образец (~40с).
 
-End-to-end over HTTP: POST stream=true → collect SSE events → the concatenated text from
-`transcript.text.done` must match the synchronous `transcribe` on the same file.
-DEVICE=cpu — determinism of greedy decoding. Graceful skip without network/weights.
+Сквозной сценарий по HTTP: POST stream=true → собираем SSE-события → склеенный текст из
+`transcript.text.done` должен совпасть с синхронным `transcribe` на том же файле.
+DEVICE=cpu — детерминизм жадного декодирования. Мягкий пропуск без сети/весов.
 """
 
 import json
@@ -33,7 +33,7 @@ def engine(tmp_path_factory: pytest.TempPathFactory) -> GigaAMEngine:
     settings = Settings(MODEL="v3_ctc", DEVICE="cpu", MODELS_DIR=cache)
     try:
         return GigaAMEngine(settings)
-    except Exception as exc:  # no network / CDN unavailable / weights not downloaded
+    except Exception as exc:  # нет сети / CDN недоступен / веса не скачались
         pytest.skip(f"model unavailable (no network/weights): {exc}")
 
 
@@ -81,5 +81,5 @@ def test_stream_done_text_matches_sync(engine: GigaAMEngine, client: TestClient)
 
     assert payloads[-1] == "[DONE]"
     assert len(deltas) > 1, "long audio must produce several delta segments"
-    # Invariant: concatenated delta == done.text == the synchronous result.
+    # Инвариант: склеенная delta == done.text == синхронный результат.
     assert "".join(deltas) == done["text"] == reference

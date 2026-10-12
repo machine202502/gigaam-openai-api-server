@@ -1,3 +1,3 @@
-"""GigaAM ASR — OpenAI-compatible Russian-speech recognition service."""
+"""GigaAM ASR — OpenAI-совместимый сервис распознавания русской речи."""
 
 __version__ = "0.2.0"
